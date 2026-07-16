@@ -18,6 +18,7 @@ bench/out/
 .showcase-launch/
 *.png
 *.pdf
+*.docx
 
 # 数据集
 # Final15 通过受校验的安装脚本获取，不进入公开仓库。
@@ -28,6 +29,8 @@ data/downloads/
 contest/
 third_party/SparseMatrixLUTestTool/
 third_party/SuiteSparse/
+third_party/THIRD_PARTY_NOTICES.md
+third_party/licenses/
 
 # OS
 .DS_Store
