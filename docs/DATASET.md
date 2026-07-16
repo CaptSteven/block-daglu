@@ -1,30 +1,47 @@
-# 数据集发布与 Git LFS
+# Final15 数据管理
 
-本仓库包含 `data/FinalTestCases/`（竞赛测试用例）。其中部分文件体积超过 100MB（例如 `*_JacobiMatrixInfo.txt`），无法以普通 git 对象上传到 GitHub。
+Final15 数据不进入公开 Git 仓库。公开仓库只保存安装、校验、测试和基准逻辑。
 
-因此，建议使用 **Git LFS** 发布数据集。
+## 安装方式
 
-## 1) 安装与初始化（发布者/贡献者）
-
-```powershell
-git lfs install
-```
-
-本仓库已提供 `.gitattributes`，默认将以下内容走 LFS：
-
-- `BlockDAGLU/.gitattributes`
-
-其中包含：
-
-- `data/**`（数据集）
-- `contest/**`（比赛资料备份，可选）
-
-## 2) 克隆（使用者）
+使用已有压缩包：
 
 ```powershell
-git lfs install
-git clone <your_repo_url>
-git lfs pull
+.\scripts\install_final15.ps1 -ArchivePath <FinalTestCases.zip> -Sha256 <sha256>
 ```
 
-如果未安装 Git LFS，克隆后会看到数据文件占位符（文本指针），运行基准会失败。
+使用私有下载地址：
+
+```powershell
+$env:BLOCKDAGLU_DATASET_URL = "<private-url>"
+$env:BLOCKDAGLU_DATASET_TOKEN = "<optional-token>"
+$env:BLOCKDAGLU_DATASET_SHA256 = "<sha256>"
+.\scripts\install_final15.ps1
+```
+
+脚本会验证 SHA-256、`1~15` 目录以及每个 case 的四个必需文件。目标目录已存在时默认拒绝覆盖；维护者必须显式使用 `-Force`。
+
+## GitHub Secrets
+
+私有完整基准工作流使用：
+
+- `BLOCKDAGLU_DATASET_URL`
+- `BLOCKDAGLU_DATASET_TOKEN`
+- `BLOCKDAGLU_DATASET_SHA256`
+- `BLOCKDAGLU_TOOLCHAIN_URL`
+- `BLOCKDAGLU_TOOLCHAIN_TOKEN`
+- `BLOCKDAGLU_TOOLCHAIN_SHA256`
+
+Secrets 不会提供给外部 fork，因此普通 PR CI 只运行公开合成测试。
+
+## 结果发布规则
+
+每次正式复跑必须保存：
+
+- `runs.csv`
+- `timing_summary.csv`
+- `margin.csv`
+- `summary.txt`
+- `metadata.json`
+
+展示页只能引用带 commit、数据校验和、硬件信息和重复次数的结果。修复前的 `1.99x` 仅标记为历史结果。

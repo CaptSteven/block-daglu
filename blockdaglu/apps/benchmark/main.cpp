@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <filesystem>
@@ -81,6 +82,8 @@ static double rel_residual_l2(const COOMatrix& A,
 struct RunResult {
   std::string alg;
   int case_id = 0;
+  int repetition = 0;
+  std::string strategy;
   int n = 0;
   std::size_t nnz = 0;
   double t_reorder_ms = 0.0;
@@ -92,9 +95,50 @@ struct RunResult {
   bool ok = false;
 };
 
+static int env_positive_int(const char* name, int default_value) {
+  if (const char* value = std::getenv(name)) {
+    const int parsed = std::atoi(value);
+    if (parsed > 0) return parsed;
+  }
+  return default_value;
+}
+
+static std::vector<const RunResult*> matching_runs(const std::vector<RunResult>& results,
+                                                   const std::string& alg,
+                                                   int case_id) {
+  std::vector<const RunResult*> matches;
+  for (const auto& result : results) {
+    if (result.alg == alg && result.case_id == case_id) matches.push_back(&result);
+  }
+  std::sort(matches.begin(), matches.end(), [](const RunResult* a, const RunResult* b) {
+    return a->t_total_ms < b->t_total_ms;
+  });
+  return matches;
+}
+
+static const RunResult* median_run(const std::vector<RunResult>& results,
+                                   const std::string& alg,
+                                   int case_id) {
+  const auto matches = matching_runs(results, alg, case_id);
+  if (matches.empty()) return nullptr;
+  return matches[matches.size() / 2];
+}
+
+static double percentile_total_ms(const std::vector<RunResult>& results,
+                                  const std::string& alg,
+                                  int case_id,
+                                  double percentile) {
+  const auto matches = matching_runs(results, alg, case_id);
+  if (matches.empty()) return std::numeric_limits<double>::infinity();
+  const std::size_t index = static_cast<std::size_t>(
+    std::ceil(percentile * static_cast<double>(matches.size())) - 1.0);
+  return matches[std::min(index, matches.size() - 1)]->t_total_ms;
+}
+
 static RunResult run_one(ALInterface* alg,
                          const std::string& alg_name,
                          int case_id,
+                         int repetition,
                           const std::string& jacobi_txt,
                           const std::string& varinfo_csv,
                           const std::string& b_csv,
@@ -102,6 +146,7 @@ static RunResult run_one(ALInterface* alg,
   RunResult r;
   r.alg = alg_name;
   r.case_id = case_id;
+  r.repetition = repetition;
 
   COOMatrix A = parseScaledValues(jacobi_txt, varinfo_csv);
   r.nnz = A.size();
@@ -127,6 +172,13 @@ static RunResult run_one(ALInterface* alg,
   const auto t0 = Clock::now();
   const bool ok_re = alg->rearrangeMatrix();
   const auto t1 = Clock::now();
+  if (ok_re) {
+    if (auto* user = dynamic_cast<UserAlgorithmWrapper*>(alg)) {
+      r.strategy = user->selectedMode();
+    } else {
+      r.strategy = "KLU";
+    }
+  }
   const bool ok_lu = ok_re && alg->decompositionLU();
   const auto t2 = Clock::now();
   const bool ok_sol = ok_lu && alg->solveLinearSystem(b);
@@ -216,6 +268,11 @@ int main(int argc, char** argv) {
   const int only_case = (argc >= 3) ? std::atoi(argv[2]) : 0;
   const int from_case = (only_case >= 1 && only_case <= max_case) ? only_case : 1;
   const int to_case = (only_case >= 1 && only_case <= max_case) ? only_case : max_case;
+  const int warmups = env_positive_int("BLOCKDAGLU_BENCH_WARMUP", 1);
+  const int repetitions = env_positive_int("BLOCKDAGLU_BENCH_REPETITIONS", 10);
+
+  std::cerr << "Benchmark policy: warmup=" << warmups
+            << ", repetitions=" << repetitions << "\n";
 
   for (int i = from_case; i <= to_case; ++i) {
     const std::string folder = std::to_string(i);
@@ -225,11 +282,18 @@ int main(int argc, char** argv) {
     const std::string b = (case_path / (folder + "_ResidualValue.csv")).string();
     const std::string xs = (case_path / (folder + "_PerturbVarValue.csv")).string();
 
-    SuiteSparseWrapper ss;
-    UserAlgorithmWrapper ua;
-
-    results.push_back(run_one(&ss, "SuiteSparse", i, jac, var, b, xs));
-    results.push_back(run_one(&ua, "BlockDAGLU", i, jac, var, b, xs));
+    for (int warmup = 0; warmup < warmups; ++warmup) {
+      SuiteSparseWrapper ss;
+      UserAlgorithmWrapper ua;
+      (void)run_one(&ss, "SuiteSparse", i, 0, jac, var, b, xs);
+      (void)run_one(&ua, "BlockDAGLU", i, 0, jac, var, b, xs);
+    }
+    for (int repetition = 1; repetition <= repetitions; ++repetition) {
+      SuiteSparseWrapper ss;
+      UserAlgorithmWrapper ua;
+      results.push_back(run_one(&ss, "SuiteSparse", i, repetition, jac, var, b, xs));
+      results.push_back(run_one(&ua, "BlockDAGLU", i, repetition, jac, var, b, xs));
+    }
   }
 
   auto open_or_stdout = [&](const std::filesystem::path& p) -> std::unique_ptr<std::ostream> {
@@ -246,9 +310,9 @@ int main(int argc, char** argv) {
   std::ostream& runs_out = runs_file ? *runs_file : std::cout;
 
   // Algorithm-level table.
-  runs_out << "alg,case,n,nnz,reorder_ms,lu_ms,solve_ms,total_ms,rel_err,rel_residual,ok\n";
+  runs_out << "alg,case,repetition,strategy,n,nnz,reorder_ms,lu_ms,solve_ms,total_ms,rel_err,rel_residual,ok\n";
   for (const auto& r : results) {
-    runs_out << r.alg << "," << r.case_id << "," << r.n << "," << r.nnz << ","
+    runs_out << r.alg << "," << r.case_id << "," << r.repetition << "," << r.strategy << "," << r.n << "," << r.nnz << ","
              << std::fixed << std::setprecision(3)
              << r.t_reorder_ms << "," << r.t_lu_ms << "," << r.t_solve_ms << "," << r.t_total_ms << ","
              << std::scientific << std::setprecision(6) << r.rel_err << ","
@@ -261,15 +325,14 @@ int main(int argc, char** argv) {
   std::ostream& margin_out = margin_file ? *margin_file : std::cout;
 
   margin_out << "case,n,nnz,xstar_rel_residual,ss_rel_residual,ua_rel_residual,eps_suitesparse,err_user,margin_eps_minus_user,pass_user_le_eps\n";
+  bool all_precision_pass = true;
   for (int i = from_case; i <= to_case; ++i) {
-    const RunResult* ss = nullptr;
-    const RunResult* ua = nullptr;
-    for (const auto& r : results) {
-      if (r.case_id != i) continue;
-      if (r.alg == "SuiteSparse") ss = &r;
-      if (r.alg == "BlockDAGLU") ua = &r;
+    const RunResult* ss = median_run(results, "SuiteSparse", i);
+    const RunResult* ua = median_run(results, "BlockDAGLU", i);
+    if (!ss || !ua) {
+      all_precision_pass = false;
+      continue;
     }
-    if (!ss || !ua) continue;
 
     // Recompute A, b0, xstar residual for evidence (not timed).
     const std::string folder = std::to_string(i);
@@ -290,6 +353,7 @@ int main(int argc, char** argv) {
     const double err = ua->rel_err;
     const double margin = eps - err;
     const bool pass = ua->ok && ss->ok && (err <= eps);
+    all_precision_pass = all_precision_pass && pass;
 
     // Diagnostic: for near-singular systems, multiple solutions may exist.
     // In that case, a solver can achieve a tiny residual but still be far from x* (large rel_err).
@@ -316,12 +380,30 @@ int main(int argc, char** argv) {
                << (pass ? "1" : "0") << "\n";
   }
 
+  std::unique_ptr<std::ostream> timing_file = open_or_stdout(out_dir / "timing_summary.csv");
+  std::ostream& timing_out = timing_file ? *timing_file : std::cout;
+  timing_out << "alg,case,strategy,n,nnz,repetitions,median_total_ms,p95_total_ms,median_rel_err,median_rel_residual,ok\n";
+  for (const char* alg_name : {"SuiteSparse", "BlockDAGLU"}) {
+    const std::string alg(alg_name);
+    for (int i = from_case; i <= to_case; ++i) {
+      const RunResult* median = median_run(results, alg, i);
+      if (!median) continue;
+      timing_out << alg << "," << i << "," << median->strategy << "," << median->n << "," << median->nnz << "," << repetitions << ","
+                 << std::fixed << std::setprecision(3) << median->t_total_ms << ","
+                 << percentile_total_ms(results, alg, i, 0.95) << ","
+                 << std::scientific << std::setprecision(6) << median->rel_err << ","
+                 << median->rel_residual << "," << (median->ok ? "1" : "0") << "\n";
+    }
+  }
+
   // Weighted total time summary for each algorithm.
   std::unique_ptr<std::ostream> summary_file = open_or_stdout(out_dir / "summary.txt");
   std::ostream& summary_out = summary_file ? *summary_file : std::cout;
 
   double ss_w = 0.0, ua_w = 0.0;
-  for (const std::string& alg : {"SuiteSparse", "BlockDAGLU"}) {
+  bool all_runs_ok = true;
+  for (const char* alg_name : {"SuiteSparse", "BlockDAGLU"}) {
+    const std::string alg(alg_name);
     double wsum = 0.0;
     double max_err = 0.0;
     bool all_ok = true;
@@ -329,8 +411,16 @@ int main(int argc, char** argv) {
       if (r.alg != alg) continue;
       all_ok = all_ok && r.ok;
       max_err = std::max(max_err, r.rel_err);
-      wsum += weight_for_n(r.n) * r.t_total_ms;
     }
+    for (int i = from_case; i <= to_case; ++i) {
+      const RunResult* median = median_run(results, alg, i);
+      if (!median) {
+        all_ok = false;
+        continue;
+      }
+      wsum += weight_for_n(median->n) * median->t_total_ms;
+    }
+    all_runs_ok = all_runs_ok && all_ok;
     if (alg == "SuiteSparse") ss_w = wsum;
     if (alg == "BlockDAGLU") ua_w = wsum;
     summary_out << alg << "_weighted_total_ms," << std::fixed << std::setprecision(3) << wsum << "\n";
@@ -345,5 +435,9 @@ int main(int argc, char** argv) {
     std::cerr << "Wrote benchmark outputs to: " << out_dir.string() << "\n";
   }
 
+  if (!all_runs_ok || !all_precision_pass) {
+    std::cerr << "Benchmark failed correctness or precision gates.\n";
+    return 1;
+  }
   return 0;
 }

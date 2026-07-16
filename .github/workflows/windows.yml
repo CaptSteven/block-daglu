@@ -1,38 +1,54 @@
-name: windows-build
+name: windows-build-and-test
 
 on:
   push:
   pull_request:
 
 jobs:
-  build:
+  build-test:
     runs-on: windows-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          lfs: true
 
-      - name: Configure (core-only)
-        run: >
-          cmake -S .\blockdaglu -B .\build\blockdaglu -DCMAKE_BUILD_TYPE=Release
-          -DBLOCKDAGLU_BUILD_COMPAT_SPARSEMATRIXLUTEST=OFF
-          -DBLOCKDAGLU_BUILD_SMOKETEST=OFF
+      - name: Install pinned vcpkg
+        shell: pwsh
+        run: |
+          git clone --depth 1 --branch 2024.05.24 https://github.com/microsoft/vcpkg.git "$env:GITHUB_WORKSPACE\vcpkg"
+          & "$env:GITHUB_WORKSPACE\vcpkg\bootstrap-vcpkg.bat" -disableMetrics
+          & "$env:GITHUB_WORKSPACE\vcpkg\vcpkg.exe" install suitesparse:x64-windows
+          if ($LASTEXITCODE -ne 0) { throw "vcpkg install failed" }
+          "VCPKG_ROOT=$env:GITHUB_WORKSPACE\vcpkg" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "$env:GITHUB_WORKSPACE\vcpkg\installed\x64-windows\bin" | Out-File -FilePath $env:GITHUB_PATH -Append
+
+      - name: Configure
+        shell: pwsh
+        run: |
+          cmake -S .\blockdaglu -B .\build\blockdaglu `
+            -DCMAKE_BUILD_TYPE=Release `
+            -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_ROOT\scripts\buildsystems\vcpkg.cmake" `
+            -DVCPKG_TARGET_TRIPLET=x64-windows `
+            -DBLOCKDAGLU_USE_LINKED_SUITESPARSE=ON `
+            -DBLOCKDAGLU_BUILD_COMPAT_SPARSEMATRIXLUTEST=OFF `
+            -DBLOCKDAGLU_BUILD_SMOKETEST=OFF `
+            -DBUILD_TESTING=ON
+          if ($LASTEXITCODE -ne 0) { throw "CMake configure failed" }
 
       - name: Build
         run: cmake --build .\build\blockdaglu --config Release -j
 
-      - name: Run minimal example
+      - name: Run CTest
         shell: pwsh
         run: |
-          $env:PATH = "$PWD\third_party\SuiteSparse\bin\x64\Release;$env:PATH"
-          .\build\blockdaglu\Release\blockdaglu_minimal.exe
+          ctest --test-dir .\build\blockdaglu -C Release --output-on-failure
+          if ($LASTEXITCODE -ne 0) { throw "CTest failed" }
 
-      - name: Configure (with toolchain)
-        run: >
-          cmake -S .\blockdaglu -B .\build\blockdaglu_tool -DCMAKE_BUILD_TYPE=Release
-          -DBLOCKDAGLU_BUILD_COMPAT_SPARSEMATRIXLUTEST=ON
-          -DBLOCKDAGLU_BUILD_SMOKETEST=ON
+      - name: Run minimal example
+        run: .\build\blockdaglu\Release\blockdaglu_minimal.exe
 
-      - name: Build (with toolchain)
-        run: cmake --build .\build\blockdaglu_tool --config Release -j
+      - name: Check showcase sources
+        shell: pwsh
+        run: |
+          node --check .\showcase\app.js
+          if ($LASTEXITCODE -ne 0) { throw "showcase JavaScript syntax check failed" }
+          .\scripts\check_showcase.ps1

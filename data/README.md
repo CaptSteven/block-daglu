@@ -1,16 +1,13 @@
-# 数据集说明
+# 数据目录
 
-本目录包含可公开的竞赛测试用例数据，目录结构保持与原始工具链一致：
+公开仓库不包含 Final15 原始数据。
 
-- `FinalTestCases/1` … `FinalTestCases/15`
+使用以下命令安装经过 SHA-256 校验的私有数据包：
 
-每个用例目录下通常包含：
+```powershell
+.\scripts\install_final15.ps1 -ArchivePath <FinalTestCases.zip> -Sha256 <sha256>
+```
 
-- `*_JacobiMatrixInfo.txt`：稀疏矩阵/结构信息（体积可能较大）
-- `*_VarInfo.csv`：变量信息
-- `*_PerturbVarValue.csv`：扰动/输入相关数据
-- `*_ResidualValue.csv`：残差信息（用于对齐/诊断）
+安装成功后生成 `data/FinalTestCases/1` 至 `data/FinalTestCases/15`。该目录已被 `.gitignore` 排除。
 
-注意：
-- 这些文件格式以原始评测工具为准；本仓库后续会在 `examples/` 与 `bench/` 提供读取与复现实验脚本。
-
+完整授权、Secrets 和结果发布规则见 `docs/DATASET.md`。

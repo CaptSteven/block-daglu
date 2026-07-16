@@ -1,0 +1,89 @@
+name: private-final15-benchmark
+
+on:
+  workflow_dispatch:
+    inputs:
+      case_id:
+        description: "0 runs all Final15 cases"
+        required: true
+        default: "0"
+      repetitions:
+        description: "Measured repetitions per case"
+        required: true
+        default: "10"
+
+jobs:
+  benchmark:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install pinned vcpkg
+        shell: pwsh
+        run: |
+          git clone --depth 1 --branch 2024.05.24 https://github.com/microsoft/vcpkg.git "$env:GITHUB_WORKSPACE\vcpkg"
+          & "$env:GITHUB_WORKSPACE\vcpkg\bootstrap-vcpkg.bat" -disableMetrics
+          & "$env:GITHUB_WORKSPACE\vcpkg\vcpkg.exe" install suitesparse:x64-windows
+          if ($LASTEXITCODE -ne 0) { throw "vcpkg install failed" }
+          "VCPKG_ROOT=$env:GITHUB_WORKSPACE\vcpkg" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "$env:GITHUB_WORKSPACE\vcpkg\installed\x64-windows\bin" | Out-File -FilePath $env:GITHUB_PATH -Append
+
+      - name: Install private competition toolchain
+        shell: pwsh
+        env:
+          BLOCKDAGLU_TOOLCHAIN_URL: ${{ secrets.BLOCKDAGLU_TOOLCHAIN_URL }}
+          BLOCKDAGLU_TOOLCHAIN_TOKEN: ${{ secrets.BLOCKDAGLU_TOOLCHAIN_TOKEN }}
+          BLOCKDAGLU_TOOLCHAIN_SHA256: ${{ secrets.BLOCKDAGLU_TOOLCHAIN_SHA256 }}
+        run: |
+          .\scripts\install_competition_toolchain.ps1
+          "$env:GITHUB_WORKSPACE\third_party\SparseMatrixLUTestTool\tool\lib\x64\Release" | Out-File -FilePath $env:GITHUB_PATH -Append
+
+      - name: Install private Final15 dataset
+        shell: pwsh
+        env:
+          BLOCKDAGLU_DATASET_URL: ${{ secrets.BLOCKDAGLU_DATASET_URL }}
+          BLOCKDAGLU_DATASET_TOKEN: ${{ secrets.BLOCKDAGLU_DATASET_TOKEN }}
+          BLOCKDAGLU_DATASET_SHA256: ${{ secrets.BLOCKDAGLU_DATASET_SHA256 }}
+        run: .\scripts\install_final15.ps1
+
+      - name: Configure and build benchmark
+        shell: pwsh
+        run: |
+          cmake -S .\blockdaglu -B .\build\blockdaglu `
+            -DCMAKE_BUILD_TYPE=Release `
+            -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_ROOT\scripts\buildsystems\vcpkg.cmake" `
+            -DVCPKG_TARGET_TRIPLET=x64-windows `
+            -DBLOCKDAGLU_USE_LINKED_SUITESPARSE=ON `
+            -DBLOCKDAGLU_BUILD_COMPAT_SPARSEMATRIXLUTEST=ON `
+            -DBLOCKDAGLU_BUILD_SMOKETEST=ON `
+            -DBUILD_TESTING=ON
+          if ($LASTEXITCODE -ne 0) { throw "CMake configure failed" }
+          cmake --build .\build\blockdaglu --config Release -j
+          if ($LASTEXITCODE -ne 0) { throw "CMake build failed" }
+          ctest --test-dir .\build\blockdaglu -C Release --output-on-failure
+          if ($LASTEXITCODE -ne 0) { throw "CTest failed" }
+
+      - name: Run Final15 benchmark
+        shell: pwsh
+        env:
+          BLOCKDAGLU_DATASET_SHA256: ${{ secrets.BLOCKDAGLU_DATASET_SHA256 }}
+          BENCHMARK_CASE_ID: ${{ inputs.case_id }}
+          BENCHMARK_REPETITIONS: ${{ inputs.repetitions }}
+        run: |
+          .\scripts\run_benchmark.ps1 `
+            -CaseId ([int]$env:BENCHMARK_CASE_ID) `
+            -Warmup 1 `
+            -Repetitions ([int]$env:BENCHMARK_REPETITIONS)
+          if ($env:BENCHMARK_CASE_ID -eq '0') {
+            $latest = Get-ChildItem .\bench\out -Directory | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+            .\scripts\export_showcase_results.ps1 -BenchmarkDir $latest.FullName -OutputPath (Join-Path $latest.FullName 'results.json')
+          }
+
+      - name: Upload benchmark evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: final15-${{ github.run_id }}
+          path: bench/out/**
+          if-no-files-found: error
