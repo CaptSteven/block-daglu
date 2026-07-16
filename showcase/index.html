@@ -1,0 +1,458 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Rerank | BlockDAGLU 项目展示</title>
+    <meta
+      name="description"
+      content="Rerank / BlockDAGLU 项目展示站：大规模稀疏线性方程组求解、DM/BTF、Block-DAG、AUTO 选路与性能结果。"
+    >
+    <link rel="icon" href="./assets/favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="./styles.css">
+    <script src="./app.js" defer></script>
+  </head>
+  <body>
+    <div class="ambient ambient-a"></div>
+    <div class="ambient ambient-b"></div>
+
+    <header class="hero reveal">
+      <nav class="hero-nav">
+        <div class="brand">
+          <span class="brand-mark">R</span>
+          <div>
+            <p class="eyebrow">Rerank / BlockDAGLU</p>
+            <h1>把稀疏结构变成求解效率</h1>
+          </div>
+        </div>
+        <div class="nav-links">
+          <a href="#architecture">技术路线</a>
+          <a href="#effects">算法作用</a>
+          <a href="#demo">算法演示</a>
+          <a href="#dashboard">评分看板</a>
+          <a href="#chapters">文稿结构</a>
+          <a href="#results">性能结果</a>
+          <a href="#delivery">交付形态</a>
+          <a href="#materials">项目材料</a>
+        </div>
+      </nav>
+
+      <div class="hero-grid">
+        <section class="hero-copy">
+          <p class="eyebrow">大规模稀疏线性方程组求解</p>
+          <h2>结构分解、填充控制与并行调度的工程化实现</h2>
+          <p class="hero-summary">
+            Rerank 面向化工流程模拟等场景下反复出现的 <code>Ax=b</code>
+            求解瓶颈，不把矩阵当成黑盒整体处理，而是通过
+            <strong>DM/BTF → UBTF → Block-DAG</strong>
+            将结构显式化，再让 AUTO 依据画像选择 KLU 或 BLOCK 路线，在保证精度门槛的前提下把性能收益真正传导到加权总耗时。
+          </p>
+          <div class="hero-actions">
+            <a class="button button-primary" href="#results">查看结果</a>
+            <a class="button button-secondary" href="../contest/Rerank_技术报告.pdf">打开技术报告</a>
+          </div>
+          <ul class="hero-badges">
+            <li>Final15 全部过门槛</li>
+            <li>加权总耗时 1.99x 提升</li>
+            <li>结构分解 + 调度 + 回退全链路自研</li>
+          </ul>
+        </section>
+
+        <aside class="hero-panel">
+          <div class="signal-card">
+            <p class="eyebrow">项目判断</p>
+            <h3>不是简单换库，而是前端结构重构</h3>
+            <p>
+              文档里最反复强调的一点是：性能提升的核心贡献来自
+              <strong>结构分解、Block-DAG 调度、AUTO 画像决策</strong>，
+              数值后端只是被插件化封装在稳定边界之后。
+            </p>
+          </div>
+          <div class="matrix-panel">
+            <div class="matrix-heading">
+              <span>Natural</span>
+              <span>UBTF</span>
+            </div>
+            <div class="matrix-comparison" aria-hidden="true">
+              <div class="matrix matrix-chaotic"></div>
+              <div class="matrix matrix-ubtf"></div>
+            </div>
+            <div class="matrix-caption">
+              左侧表示原始耦合结构，右侧表示经 DM/BTF 后显式化的块上三角结构。
+            </div>
+          </div>
+        </aside>
+      </div>
+    </header>
+
+    <main class="page">
+      <section class="metrics reveal">
+        <article class="metric-card">
+          <p class="metric-label">Weighted Total</p>
+          <h3>7937.462 → 3995.650 ms</h3>
+          <p>Final15 无预热单轮口径下，加权总耗时下降到原来的 50.3%。</p>
+        </article>
+        <article class="metric-card">
+          <p class="metric-label">Overall Speedup</p>
+          <h3>1.99x</h3>
+          <p>全部 15 个用例满足 <code>err_user ≤ ε</code> 的前提下获得的整体收益。</p>
+        </article>
+        <article class="metric-card">
+          <p class="metric-label">Case 7</p>
+          <h3>2.532x</h3>
+          <p>Case 7 从 4634.000 ms 降至 1830.190 ms，分解阶段收益最明显。</p>
+        </article>
+        <article class="metric-card">
+          <p class="metric-label">Best Per-case</p>
+          <h3>3.710x</h3>
+          <p>Case 9 使用 BLOCK 路线时，表现出最强的单用例加速。</p>
+        </article>
+      </section>
+
+      <section class="section reveal" id="dashboard">
+        <div class="section-heading">
+          <p class="eyebrow">评分看板</p>
+          <h2>把评分口径、主要贡献和系统级收益放在同一块面板里</h2>
+        </div>
+        <div class="dashboard-layout">
+          <article class="dashboard-panel">
+            <div class="panel-heading">
+              <p class="eyebrow">Scoreboard</p>
+              <h3>这页最适合答辩开场和结果收尾</h3>
+            </div>
+            <div class="score-grid" id="score-grid"></div>
+          </article>
+
+          <article class="dashboard-panel">
+            <div class="panel-heading">
+              <p class="eyebrow">Weighted Insight</p>
+              <h3>真正拉动 Final15 分数的，是少数高权重大 case</h3>
+            </div>
+            <div class="impact-list" id="impact-list"></div>
+            <img
+              class="panel-figure"
+              src="./assets/performance_snapshot.svg"
+              alt="Rerank 关键性能快照"
+            >
+          </article>
+        </div>
+      </section>
+
+      <section class="section reveal">
+        <div class="section-heading">
+          <p class="eyebrow">项目问题</p>
+          <h2>为什么这道题不能只靠“再快一点的 LU”来解决</h2>
+        </div>
+        <div class="story-grid">
+          <article class="story-card">
+            <h3>瓶颈不只是算得慢</h3>
+            <p>
+              在流程模拟里，牛顿迭代每一步都要解一次稀疏线性系统。真正拖慢端到端的不只是某个核函数常数，而是
+              <strong>fill-in、关键路径、长尾块和病态矩阵</strong> 共同叠加出来的系统问题。
+            </p>
+          </article>
+          <article class="story-card">
+            <h3>并行度不是线程数</h3>
+            <p>
+              稀疏直接法的并行上限受结构依赖限制。就绪任务不足、超大关键块主导或带宽饱和时，线程越多反而越慢，
+              因此必须让“结构”和“调度”先被看见。
+            </p>
+          </article>
+          <article class="story-card">
+            <h3>稳健性是硬约束</h3>
+            <p>
+              这不是纯性能题。Rerank 把近奇异、条件数变坏、NaN/Inf、pivot growth 等风险当成一等公民处理，
+              通过信号触发更保守的路径，先保住精度门槛，再追求收益。
+            </p>
+          </article>
+        </div>
+      </section>
+
+      <section class="section reveal" id="architecture">
+        <div class="section-heading">
+          <p class="eyebrow">技术路线</p>
+          <h2>从矩阵画像到 AUTO 选路，再到 Block-DAG 并行执行</h2>
+        </div>
+        <div class="architecture-shell">
+          <div class="pipeline">
+            <div class="pipeline-node">
+              <span class="node-step">01</span>
+              <h3>Input</h3>
+              <p>读取 COO / CSR 稀疏矩阵与右端项 <code>b</code>。</p>
+            </div>
+            <div class="pipeline-arrow"></div>
+            <div class="pipeline-node accent">
+              <span class="node-step">02</span>
+              <h3>Profile</h3>
+              <p>提取规模、NNZ、块结构、长尾风险、预估 fill-in 等特征。</p>
+            </div>
+            <div class="pipeline-arrow"></div>
+            <div class="pipeline-node">
+              <span class="node-step">03</span>
+              <h3>AUTO</h3>
+              <p>根据画像决定走 KLU 稳健路径，还是 BLOCK 结构分解路径。</p>
+            </div>
+          </div>
+
+          <div class="route-grid">
+            <article class="route-card route-card-safe">
+              <p class="route-tag">Route A</p>
+              <h3>KLU-like 单体路径</h3>
+              <p>
+                适合小规模或结构不利于分块的输入。收益主要来自全局重排对 fill-in 的抑制，
+                优点是稳健、轻量、构建开销低。
+              </p>
+              <ul class="feature-list">
+                <li>整体执行符号分析与数值分解</li>
+                <li>默认保持与基线相近的稳定边界</li>
+                <li>当 BLOCK 构建收益不足时自动回到这里</li>
+              </ul>
+            </article>
+
+            <article class="route-card route-card-fast">
+              <p class="route-tag">Route B</p>
+              <h3>BLOCK 结构分解路径</h3>
+              <p>
+                对大规模且具有可利用块结构的矩阵，先做
+                <strong>DM/BTF → UBTF</strong>，再将对角块映射到
+                <strong>Block-DAG</strong> 上执行并行 factor / solve。
+              </p>
+              <ul class="feature-list">
+                <li>对角块天然独立，适合并行 factor</li>
+                <li>跨块依赖只在上三角传播，求解阶段更可控</li>
+                <li>用 work-stealing 缓解大块拖尾与负载不均</li>
+              </ul>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="section reveal" id="effects">
+        <div class="section-heading">
+          <p class="eyebrow">算法作用</p>
+          <h2>把“为什么有效”拆成画像、结构、选路、并行和稳健五段作用链</h2>
+        </div>
+        <div class="effect-layout">
+          <article class="effect-constellation">
+            <div class="panel-heading">
+              <p class="eyebrow">Effect Map</p>
+              <h3>算法不是一招提速，而是五段作用逐层传导</h3>
+            </div>
+            <div class="effect-orbit" id="effect-orbit" aria-label="算法作用关系图"></div>
+            <div class="effect-stage-strip" id="effect-stage-strip"></div>
+          </article>
+
+          <article class="effect-explainer" id="effect-explainer">
+            <p class="eyebrow">Stage Impact</p>
+            <h3>作用说明加载中</h3>
+            <p>这里会跟随算法演示步骤，说明当前阶段究竟改变了什么。</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="section reveal" id="demo">
+        <div class="section-heading">
+          <p class="eyebrow">算法演示</p>
+          <h2>把 DM/BTF、AUTO、Block-DAG 和稳健回退做成可播放动画</h2>
+        </div>
+        <div class="demo-controls">
+          <div class="demo-stepbar" id="demo-stepbar"></div>
+          <div class="demo-meta">
+            <div class="demo-playhead" aria-hidden="true">
+              <span id="demo-progress-fill"></span>
+            </div>
+            <p class="demo-status-copy" id="demo-status-copy">自动播放中 · 3.2 秒 / 步</p>
+          </div>
+          <div class="demo-buttons">
+            <button class="chip" id="demo-prev" type="button">上一步</button>
+            <button class="chip is-active" id="demo-toggle" type="button">暂停自动播放</button>
+            <button class="chip" id="demo-next" type="button">下一步</button>
+          </div>
+        </div>
+        <div class="demo-shell">
+          <article class="demo-stageboard">
+            <div class="demo-visual-top">
+              <div class="demo-panel">
+                <p class="eyebrow">Matrix Stage</p>
+                <div class="demo-matrix-grid" id="demo-matrix" aria-hidden="true"></div>
+              </div>
+              <div class="demo-panel">
+                <p class="eyebrow">AUTO Decision</p>
+                <div class="demo-route-meter" id="demo-route-meter"></div>
+                <div class="demo-badges" id="demo-badges"></div>
+              </div>
+            </div>
+            <div class="demo-visual-bottom">
+              <div class="demo-panel">
+                <p class="eyebrow">Block-DAG</p>
+                <div class="demo-dag" id="demo-dag"></div>
+              </div>
+              <div class="demo-panel">
+                <p class="eyebrow">Workers</p>
+                <div class="demo-workers" id="demo-workers"></div>
+              </div>
+            </div>
+          </article>
+
+          <aside class="demo-detail" id="demo-detail" aria-live="polite">
+            <p class="eyebrow">Step Detail</p>
+            <h3>算法演示加载中</h3>
+            <p>这里会随着步骤切换，解释当前阶段到底发生了什么。</p>
+          </aside>
+        </div>
+      </section>
+
+      <section class="section reveal" id="chapters">
+        <div class="section-heading">
+          <p class="eyebrow">文稿结构</p>
+          <h2>六章作品文档可以直接映射成答辩提纲和页面叙事</h2>
+        </div>
+        <div class="chapter-layout">
+          <div class="chapter-grid" id="chapter-grid"></div>
+          <aside class="chapter-aside">
+            <img
+              class="panel-figure"
+              src="./assets/auto_strategy.svg"
+              alt="AUTO 选路机制示意"
+            >
+            <p>
+              页面结构现在和正式文稿保持一致：先说明问题，再解释设计与实现，
+              然后给出测试、安装使用和项目总结，避免展示站与提交稿各说各话。
+            </p>
+          </aside>
+        </div>
+      </section>
+
+      <section class="section reveal">
+        <div class="section-heading">
+          <p class="eyebrow">项目亮点</p>
+          <h2>四个创新点串起“可解释、可回归、可复现”的闭环</h2>
+        </div>
+        <div class="innovation-grid" id="innovation-grid"></div>
+      </section>
+
+      <section class="section reveal">
+        <div class="section-heading">
+          <p class="eyebrow">代码落点</p>
+          <h2>这个项目不是概念稿，核心模块都能在仓库里对上</h2>
+        </div>
+        <div class="code-grid" id="code-grid"></div>
+      </section>
+
+      <section class="section reveal" id="results">
+        <div class="section-heading">
+          <p class="eyebrow">性能结果</p>
+          <h2>Final15 的收益来自“按结构选路”，不是统一强推并行</h2>
+        </div>
+
+        <div class="results-summary">
+          <article class="summary-card">
+            <h3>策略分布</h3>
+            <p>
+              15 个用例里，只有结构收益足够明显的 case 4 / 7 / 9 / 13 默认走 BLOCK；
+              其他用例保持 KLU 路线，这正是 AUTO 策略的价值。
+            </p>
+          </article>
+          <article class="summary-card">
+            <h3>收益来源</h3>
+            <p>
+              文档明确指出收益主要集中在 <code>decomp / factor</code> 阶段，
+              说明结构分解真正降低了 fill-in 和关键路径长度。
+            </p>
+          </article>
+          <article class="summary-card">
+            <h3>系统优化</h3>
+            <p>
+              在线程与亲和性层面，项目还做了 P/E 核感知与线程甜点区选择。
+              在一组消融实验中，<code>pcores</code> 相比 <code>off</code> 达到 1.218x。
+            </p>
+          </article>
+        </div>
+
+        <div class="results-visuals">
+          <article class="chart-card">
+            <div class="panel-heading">
+              <p class="eyebrow">Trend View</p>
+              <h3>15 个 case 上，Baseline 与 Rerank 的耗时曲线如何分离</h3>
+            </div>
+            <div id="trend-chart"></div>
+          </article>
+          <article class="chart-card">
+            <div class="panel-heading">
+              <p class="eyebrow">Gain View</p>
+              <h3>真正决定总分的，是哪些 case 的加权贡献</h3>
+            </div>
+            <div id="gain-chart"></div>
+          </article>
+        </div>
+
+        <div class="controls">
+          <div class="chip-group" id="strategy-filter" aria-label="筛选策略">
+            <button class="chip is-active" data-filter="all" type="button">全部</button>
+            <button class="chip" data-filter="block" type="button">BLOCK</button>
+            <button class="chip" data-filter="klu" type="button">KLU</button>
+          </div>
+          <label class="sorter">
+            <span>排序</span>
+            <select id="sort-select">
+              <option value="case">按 Case 编号</option>
+              <option value="speedup">按加速比</option>
+              <option value="weight">按权重</option>
+              <option value="baseline">按基线耗时</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="case-layout">
+          <div class="case-list" id="case-list"></div>
+          <aside class="case-detail" id="case-detail" aria-live="polite">
+            <p class="eyebrow">Case Spotlight</p>
+            <h3>请选择一条用例</h3>
+            <p>点击左侧卡片后，这里会展示该 case 的默认策略、规模、耗时对比和解释。</p>
+          </aside>
+        </div>
+      </section>
+
+      <section class="section reveal">
+        <div class="section-heading">
+          <p class="eyebrow">证据链</p>
+          <h2>项目文档中的流程图、执行图和论证图可以直接作为展示素材</h2>
+        </div>
+        <div class="gallery-grid" id="gallery-grid"></div>
+      </section>
+
+      <section class="section reveal" id="delivery">
+        <div class="section-heading">
+          <p class="eyebrow">交付形态</p>
+          <h2>代码、展示页、Markdown、LaTeX、PDF 和 DOCX 形成完整提交闭环</h2>
+        </div>
+        <div class="delivery-grid" id="delivery-grid"></div>
+      </section>
+
+      <section class="section reveal" id="materials">
+        <div class="section-heading">
+          <p class="eyebrow">项目材料</p>
+          <h2>从技术报告、路演稿到源码入口，一页打通</h2>
+        </div>
+        <div class="materials-grid" id="materials-grid"></div>
+      </section>
+    </main>
+
+    <footer class="footer reveal">
+      <div>
+        <p class="eyebrow">本地使用</p>
+        <h2>打开方式</h2>
+        <p>
+          本提交包建议优先使用上一层目录中的一键启动脚本；如果手动打开，请进入
+          <code>block-daglu-master/showcase/index.html</code>。如果希望更稳定地加载本地资源，
+          可在 <code>block-daglu-master</code> 目录执行 <code>python3 -m http.server</code>
+          后访问该页面。
+        </p>
+      </div>
+      <div class="footer-note">
+        <p>内容整理自 README、架构文档、技术报告、路演讲稿、答辩问答与核心源码。</p>
+        <a class="button button-secondary" href="../README.md">回到仓库 README</a>
+      </div>
+    </footer>
+  </body>
+</html>

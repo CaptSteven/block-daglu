@@ -1,0 +1,38 @@
+name: windows-build
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - name: Configure (core-only)
+        run: >
+          cmake -S .\blockdaglu -B .\build\blockdaglu -DCMAKE_BUILD_TYPE=Release
+          -DBLOCKDAGLU_BUILD_COMPAT_SPARSEMATRIXLUTEST=OFF
+          -DBLOCKDAGLU_BUILD_SMOKETEST=OFF
+
+      - name: Build
+        run: cmake --build .\build\blockdaglu --config Release -j
+
+      - name: Run minimal example
+        shell: pwsh
+        run: |
+          $env:PATH = "$PWD\third_party\SuiteSparse\bin\x64\Release;$env:PATH"
+          .\build\blockdaglu\Release\blockdaglu_minimal.exe
+
+      - name: Configure (with toolchain)
+        run: >
+          cmake -S .\blockdaglu -B .\build\blockdaglu_tool -DCMAKE_BUILD_TYPE=Release
+          -DBLOCKDAGLU_BUILD_COMPAT_SPARSEMATRIXLUTEST=ON
+          -DBLOCKDAGLU_BUILD_SMOKETEST=ON
+
+      - name: Build (with toolchain)
+        run: cmake --build .\build\blockdaglu_tool --config Release -j

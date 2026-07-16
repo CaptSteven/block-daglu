@@ -1,0 +1,44 @@
+<svg width="1400" height="760" viewBox="0 0 1400 760" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1400" height="760" fill="#F7F2EA"/>
+  <rect x="40" y="36" width="1320" height="688" rx="32" fill="#FFFDF8" stroke="#D8D0C3" stroke-width="2"/>
+  <text x="84" y="104" fill="#17324A" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="40" font-weight="700">AUTO 选路机制示意</text>
+  <text x="84" y="142" fill="#7A604E" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="20">不是按 case 编号硬编码，而是按矩阵画像做自适应决策</text>
+
+  <rect x="90" y="220" width="262" height="132" rx="24" fill="#F4E7D7" stroke="#D2B89C"/>
+  <text x="126" y="270" fill="#17324A" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="28" font-weight="700">输入矩阵画像</text>
+  <text x="126" y="308" fill="#546575" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="20">n、NNZ、nblocks、max_block</text>
+
+  <rect x="430" y="220" width="250" height="132" rx="24" fill="#E3F1EF" stroke="#98BDBA"/>
+  <text x="472" y="270" fill="#17324A" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="28" font-weight="700">代价判断</text>
+  <text x="472" y="308" fill="#546575" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="20">构建成本 vs 分解收益</text>
+
+  <rect x="760" y="196" width="282" height="174" rx="28" fill="#17324A"/>
+  <text x="846" y="252" fill="#FFF8EF" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="30" font-weight="700">AUTO</text>
+  <text x="804" y="296" fill="#D9E5EF" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="20">选择路线、线程数、</text>
+  <text x="804" y="326" fill="#D9E5EF" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="20">merge_small 等参数</text>
+
+  <rect x="1120" y="166" width="190" height="108" rx="24" fill="#FBF1E7" stroke="#D8D0C3"/>
+  <text x="1160" y="214" fill="#B86A36" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="24" font-weight="700">KLU</text>
+  <text x="1150" y="248" fill="#546575" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="18">稳健、轻量</text>
+
+  <rect x="1120" y="304" width="190" height="126" rx="24" fill="#E8F6F4" stroke="#98BDBA"/>
+  <text x="1150" y="352" fill="#1D7F86" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="24" font-weight="700">BLOCK</text>
+  <text x="1148" y="386" fill="#546575" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="18">结构收益高</text>
+  <text x="1148" y="414" fill="#546575" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="18">适合并行分块</text>
+
+  <rect x="130" y="452" width="1120" height="196" rx="30" fill="#FFF8EE" stroke="#D8D0C3"/>
+  <text x="168" y="506" fill="#17324A" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="30" font-weight="700">决策准则</text>
+  <text x="168" y="554" fill="#546575" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="22">若分块后 fill-in 降低且块级并行收益明显，则倾向 BLOCK；</text>
+  <text x="168" y="590" fill="#546575" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="22">若矩阵全局耦合强、关键块过大或分解构建成本过高，则保持 KLU；</text>
+  <text x="168" y="626" fill="#546575" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="22">一旦检测到异常信号，则自动回退到更保守配置，优先保证精度门槛。</text>
+
+  <path d="M352 286H430" stroke="#17324A" stroke-width="4" stroke-linecap="round"/>
+  <path d="M680 286H760" stroke="#17324A" stroke-width="4" stroke-linecap="round"/>
+  <path d="M1042 244H1120" stroke="#17324A" stroke-width="4" stroke-linecap="round"/>
+  <path d="M1042 334H1120" stroke="#17324A" stroke-width="4" stroke-linecap="round"/>
+  <path d="M901 370V452" stroke="#17324A" stroke-width="4" stroke-linecap="round" stroke-dasharray="10 10"/>
+  <circle cx="748" cy="286" r="8" fill="#17324A"/>
+  <circle cx="1110" cy="244" r="8" fill="#17324A"/>
+  <circle cx="1110" cy="334" r="8" fill="#17324A"/>
+  <circle cx="901" cy="440" r="8" fill="#17324A"/>
+</svg>

@@ -1,0 +1,63 @@
+<svg width="1400" height="820" viewBox="0 0 1400 820" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1400" height="820" fill="#F8F4EC"/>
+  <rect x="48" y="42" width="1304" height="736" rx="32" fill="#FFFDF7" stroke="#D7CFC2" stroke-width="2"/>
+  <text x="84" y="110" fill="#17324A" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="40" font-weight="700">Rerank 系统总体结构</text>
+  <text x="84" y="150" fill="#7A604E" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="20">从输入矩阵到结构分解、并行调度、稳健回退与结果展示的完整链路</text>
+
+  <rect x="86" y="210" width="220" height="118" rx="24" fill="#F4E8D8" stroke="#D1B79A"/>
+  <text x="116" y="258" fill="#17324A" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="28" font-weight="700">输入层</text>
+  <text x="116" y="298" fill="#546575" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="20">COO / CSR 稀疏矩阵</text>
+
+  <rect x="354" y="210" width="240" height="118" rx="24" fill="#DDEEEA" stroke="#8EB8B5"/>
+  <text x="388" y="258" fill="#17324A" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="28" font-weight="700">画像分析</text>
+  <text x="388" y="298" fill="#546575" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="20">规模、NNZ、块结构、长尾风险</text>
+
+  <rect x="642" y="210" width="220" height="118" rx="24" fill="#17324A"/>
+  <text x="706" y="258" fill="#FFF8EF" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="28" font-weight="700">AUTO</text>
+  <text x="676" y="298" fill="#D9E5EF" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="20">自适应选路与线程决策</text>
+
+  <rect x="930" y="182" width="330" height="168" rx="28" fill="#FAF0E8" stroke="#D7CFC2"/>
+  <text x="970" y="228" fill="#B86A36" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="22" font-weight="700">Route A</text>
+  <text x="970" y="270" fill="#17324A" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="30" font-weight="700">KLU 单体稳健路径</text>
+  <text x="970" y="308" fill="#546575" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="20">适合小规模或结构不利于分块的输入</text>
+
+  <rect x="930" y="396" width="330" height="220" rx="28" fill="#ECF6F5" stroke="#8EB8B5"/>
+  <text x="970" y="442" fill="#1D7F86" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="22" font-weight="700">Route B</text>
+  <text x="970" y="484" fill="#17324A" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="30" font-weight="700">BLOCK 结构分解路径</text>
+  <text x="970" y="522" fill="#546575" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="20">DM/BTF → UBTF → Block-DAG</text>
+  <text x="970" y="556" fill="#546575" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="20">对角块并行 factor，按依赖求解</text>
+
+  <rect x="86" y="418" width="776" height="296" rx="30" fill="#FFF9F0" stroke="#D7CFC2"/>
+  <text x="120" y="468" fill="#17324A" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="30" font-weight="700">核心能力模块</text>
+
+  <rect x="124" y="510" width="198" height="142" rx="22" fill="#FFFFFF" stroke="#D7CFC2"/>
+  <text x="154" y="556" fill="#17324A" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="24" font-weight="700">结构分解</text>
+  <text x="154" y="594" fill="#546575" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="18">DM/BTF 构造 UBTF</text>
+  <text x="154" y="624" fill="#546575" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="18">限制 fill-in 扩散</text>
+
+  <rect x="344" y="510" width="198" height="142" rx="22" fill="#FFFFFF" stroke="#D7CFC2"/>
+  <text x="374" y="556" fill="#17324A" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="24" font-weight="700">并行调度</text>
+  <text x="374" y="594" fill="#546575" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="18">Block-DAG + 线程池</text>
+  <text x="374" y="624" fill="#546575" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="18">work-stealing 抑制长尾</text>
+
+  <rect x="564" y="510" width="198" height="142" rx="22" fill="#FFFFFF" stroke="#D7CFC2"/>
+  <text x="594" y="556" fill="#17324A" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="24" font-weight="700">稳健回退</text>
+  <text x="594" y="594" fill="#546575" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="18">rcond / NaN / residual</text>
+  <text x="594" y="624" fill="#546575" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="18">优先保证 err_user ≤ ε</text>
+
+  <path d="M306 268H354" stroke="#17324A" stroke-width="4" stroke-linecap="round"/>
+  <path d="M594 268H642" stroke="#17324A" stroke-width="4" stroke-linecap="round"/>
+  <path d="M862 268H930" stroke="#17324A" stroke-width="4" stroke-linecap="round"/>
+  <path d="M862 442H930" stroke="#17324A" stroke-width="4" stroke-linecap="round"/>
+  <path d="M838 328L930 404" stroke="#17324A" stroke-width="4" stroke-linecap="round"/>
+  <path d="M422 328V418" stroke="#17324A" stroke-width="4" stroke-linecap="round" stroke-dasharray="10 10"/>
+  <path d="M642 328V418" stroke="#17324A" stroke-width="4" stroke-linecap="round" stroke-dasharray="10 10"/>
+
+  <circle cx="914" cy="268" r="8" fill="#17324A"/>
+  <circle cx="914" cy="442" r="8" fill="#17324A"/>
+  <circle cx="422" cy="408" r="8" fill="#17324A"/>
+  <circle cx="642" cy="408" r="8" fill="#17324A"/>
+
+  <text x="974" y="652" fill="#17324A" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="22" font-weight="700">结果输出</text>
+  <text x="974" y="688" fill="#546575" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="18">求解结果、基准测试、前端展示页面</text>
+</svg>

@@ -1,0 +1,42 @@
+<svg width="1400" height="820" viewBox="0 0 1400 820" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1400" height="820" fill="#F8F3EB"/>
+  <rect x="42" y="36" width="1316" height="744" rx="32" fill="#FFFDF8" stroke="#D8D0C3" stroke-width="2"/>
+  <text x="84" y="102" fill="#17324A" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="40" font-weight="700">关键性能结果快照</text>
+  <text x="84" y="140" fill="#7A604E" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="20">基于项目报告中的 Final15 结果整理</text>
+
+  <rect x="92" y="188" width="1216" height="522" rx="28" fill="#FFF8EE" stroke="#D8D0C3"/>
+
+  <line x1="260" y1="250" x2="260" y2="650" stroke="#CABFB0" stroke-width="2"/>
+  <line x1="260" y1="650" x2="1238" y2="650" stroke="#CABFB0" stroke-width="2"/>
+
+  <text x="132" y="330" fill="#17324A" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="26" font-weight="700">Weighted Total</text>
+  <text x="168" y="470" fill="#17324A" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="26" font-weight="700">Case 7</text>
+  <text x="168" y="610" fill="#17324A" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="26" font-weight="700">Case 9</text>
+
+  <rect x="286" y="288" width="842" height="48" rx="18" fill="#E9D0BD"/>
+  <rect x="286" y="360" width="424" height="48" rx="18" fill="#1D7F86"/>
+  <text x="1146" y="322" fill="#7A604E" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="20">Baseline 7937.462 ms</text>
+  <text x="728" y="394" fill="#1D7F86" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="20">Ours 3995.650 ms</text>
+
+  <rect x="286" y="428" width="491" height="48" rx="18" fill="#E9D0BD"/>
+  <rect x="286" y="500" width="194" height="48" rx="18" fill="#1D7F86"/>
+  <text x="795" y="462" fill="#7A604E" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="20">Baseline 4634.000 ms</text>
+  <text x="498" y="534" fill="#1D7F86" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="20">Ours 1830.190 ms</text>
+
+  <rect x="286" y="568" width="386" height="48" rx="18" fill="#E9D0BD"/>
+  <rect x="286" y="640" width="104" height="48" rx="18" fill="#1D7F86"/>
+  <text x="690" y="602" fill="#7A604E" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="20">Baseline 3642.620 ms</text>
+  <text x="408" y="674" fill="#1D7F86" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="20">Ours 981.908 ms</text>
+
+  <rect x="1142" y="286" width="126" height="122" rx="24" fill="#ECF6F5" stroke="#98BDBA"/>
+  <text x="1170" y="330" fill="#17324A" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="28" font-weight="700">1.99x</text>
+  <text x="1160" y="366" fill="#546575" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="18">总体提升</text>
+
+  <rect x="1142" y="426" width="126" height="122" rx="24" fill="#ECF6F5" stroke="#98BDBA"/>
+  <text x="1162" y="470" fill="#17324A" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="28" font-weight="700">2.53x</text>
+  <text x="1166" y="506" fill="#546575" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="18">Case 7</text>
+
+  <rect x="1142" y="566" width="126" height="122" rx="24" fill="#ECF6F5" stroke="#98BDBA"/>
+  <text x="1162" y="610" fill="#17324A" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="28" font-weight="700">3.71x</text>
+  <text x="1166" y="646" fill="#546575" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="18">Case 9</text>
+</svg>

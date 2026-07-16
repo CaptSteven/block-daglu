@@ -1,0 +1,871 @@
+\documentclass[12pt,a4paper,fontset=none]{ctexart}
+
+\usepackage[left=2.5cm,right=2.5cm,top=2.5cm,bottom=2.5cm]{geometry}
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{multirow}
+\usepackage{caption}
+\usepackage{enumitem}
+\usepackage[hidelinks]{hyperref}
+\usepackage{pgfplots}
+
+\setCJKmainfont{Songti SC}
+\setCJKsansfont{PingFang SC}
+\setCJKmonofont{Heiti SC}
+
+\captionsetup{font=small,labelfont=bf}
+\setlist[itemize]{leftmargin=2em}
+\setlist[enumerate]{leftmargin=2em}
+\setlength{\parskip}{0.4em}
+\setlength{\parindent}{2em}
+\renewcommand{\contentsname}{目\quad 录}
+\pgfplotsset{compat=1.18}
+
+\title{\bfseries 中国大学生计算机设计大赛\\[0.6em]\bfseries 软件开发类作品文档}
+\author{}
+\date{}
+
+\begin{document}
+
+\maketitle
+\thispagestyle{empty}
+
+\begin{center}
+\begin{tabular}{p{3cm}p{10cm}}
+作品编号： & 待填写 \\
+作品名称： & Rerank——大规模稀疏线性方程组智能求解与展示系统 \\
+作\quad 者： & 待填写 \\
+版本编号： & V1.0 \\
+填写日期： & 2026年4月7日 \\
+\end{tabular}
+\end{center}
+
+\vspace{2em}
+\tableofcontents
+\newpage
+
+\section{需求分析}
+
+\subsection{项目背景}
+
+在化工流程模拟、科学计算、工业优化与约束求解等场景中，大规模稀疏线性方程组求解是最核心、最频繁的计算步骤之一。该类任务通常嵌入 Newton 迭代、参数寻优与动态仿真中，被重复多次调用。若底层仍采用“整体黑盒式”的稀疏 LU 分解方案，容易面临 fill-in 急剧增长、关键路径过长、长尾块拖慢并行效率以及病态矩阵下精度不稳定等问题。
+
+因此，本作品研发了 Rerank 系统，目标是在满足精度门槛的前提下，针对稀疏矩阵结构特征进行自动分析和自适应调度，通过结构分解、并行执行与稳健回退机制提升整体求解性能，并配套实现一个前端展示界面，用于竞赛答辩、教学演示和项目成果说明。
+
+对于流程模拟类问题，可将核心求解过程表示为
+\begin{equation}
+J(x_k)\Delta x_k=-F(x_k),\qquad x_{k+1}=x_k+\Delta x_k,
+\end{equation}
+其中 $J(x_k)$ 为雅可比矩阵。由此可见，稀疏线性方程组求解是整个非线性系统求解链路中的关键基础能力。
+
+\subsection{行业现状与主要痛点}
+
+传统稀疏直接法在工程实践中已经非常成熟，但对于竞赛要求下的“高精度门槛 + 加权总耗时最优 + 可复现工程交付”，仍存在明显局限。综合项目报告与源码实现，可以归纳出以下痛点：
+\begin{enumerate}
+  \item 结构信息利用不足。很多方案更关注数值核本身，而忽略了矩阵是否可分块、最大块比例是否失衡、跨块依赖是否明显等结构信息。
+  \item 并行能力难以解释。即便底层数值库部分支持并行，外部使用者仍难以回答“为什么某些 case 快、某些 case 慢”，也难以针对关键路径做定向优化。
+  \item 稳健性和性能耦合过强。若系统缺少统一的异常检测和回退闭环，一旦遇到病态矩阵，性能优化很容易以失败率上升为代价。
+  \item 展示与交付能力不足。许多高性能求解方案停留在“算法实验”层面，缺少面向评审、教学和项目展示场景的统一表达。
+\end{enumerate}
+
+\subsection{典型应用场景}
+
+本作品并不是围绕单一测试集临时搭建，而是面向一类具有广泛代表性的稀疏线性系统求解场景。典型应用如表~\ref{tab:scenes} 所示。
+
+\begin{table}[H]
+\centering
+\caption{典型应用场景与作品价值}
+\label{tab:scenes}
+\begin{tabular}{p{3.2cm}p{4.0cm}p{5.6cm}}
+\toprule
+场景 & 问题特征 & 本作品价值 \\
+\midrule
+化工流程模拟 & 矩阵规模大、局部耦合强、迭代调用频繁 & 通过结构分解降低 fill-in，并对大权重样本显著加速 \\
+科学计算教学与实验 & 需要直观理解矩阵结构、调度关系和性能差异 & 展示界面便于教学演示和答辩讲解 \\
+并行计算研究 & 关注任务划分、关键路径和负载均衡 & Block-DAG 与 work-stealing 提供良好实验平台 \\
+软件工程竞赛展示 & 不仅要求结果，还要求完整作品形态 & 同时具备算法、测试、界面和文档交付能力 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{面向用户}
+
+本作品主要面向以下三类用户：
+\begin{itemize}
+  \item 需要高效求解稀疏线性系统的科研与工程人员；
+  \item 数值计算、并行计算与软件工程方向的教师和学生；
+  \item 需要快速理解项目思路、技术亮点和性能结果的评审专家与答辩观众。
+\end{itemize}
+
+若后续进行工程推广，本作品也可以作为“面向稀疏求解的工程参考实现”，服务于需要将数值能力嵌入工业软件或科研原型系统的开发者。
+
+\subsection{主要功能与目标}
+
+本作品主要实现如下功能：
+\begin{enumerate}
+  \item 对输入稀疏矩阵进行画像分析，提取规模、非零元数量、块结构和长尾风险等特征；
+  \item 在全局 KLU 路线与 BLOCK 分块路线之间进行自适应选路；
+  \item 利用 DM/BTF 将矩阵转换为 UBTF 结构，并构建 Block-DAG；
+  \item 通过线程池与 work-stealing 实现块级并行 factor 与 solve；
+  \item 通过异常检测与回退机制保证精度门槛；
+  \item 输出可复现实验结果，并通过前端界面统一呈现项目材料。
+\end{enumerate}
+
+本作品的总体优化目标可概括为如下约束优化问题：
+\begin{equation}
+\min T_{\mathrm{weighted}}=\sum_{i=1}^{N} w_i t_i
+\quad\text{s.t.}\quad
+err_{user}\le \varepsilon ,
+\end{equation}
+其中 $w_i$ 表示第 $i$ 个测试用例权重，$t_i$ 表示其总耗时，$\varepsilon$ 为基线方法给出的误差门槛。
+
+围绕该优化目标，系统不仅关注最终总分，还追踪结构指标、分解指标、求解指标与工程指标。其中结构指标关注块数量、最大块比例和可并行块集合；分解指标关注 fill-in、\texttt{decomp\_ms} 与数值分解成功率；求解指标关注误差、残差与裕量；工程指标关注构建成本、线程利用率与跨轮次波动。
+
+\subsection{需求分类}
+
+\paragraph{功能性需求}
+\begin{enumerate}
+  \item 系统应支持读取稀疏矩阵输入，并完成基础预处理；
+  \item 系统应支持根据输入矩阵特征自动选择求解路线；
+  \item 系统应支持 BLOCK 路线下的结构分解、块级并行 factor 与按依赖求解；
+  \item 系统应支持 KLU 路线下的稳健整体求解；
+  \item 系统应支持误差计算、门槛比较、失败检测与自动回退；
+  \item 系统应支持输出逐用例结果、汇总统计和图文展示材料。
+\end{enumerate}
+
+\paragraph{非功能性需求}
+\begin{enumerate}
+  \item 精度优先：所有优化均不得破坏 $err_{user}\le\varepsilon$ 的硬门槛；
+  \item 性能稳定：对大权重样本应具备可重复的加速效果，而非偶发跑分快；
+  \item 可解释性：每项优化都应能回溯到结构变化、fill-in 变化或关键路径压缩；
+  \item 可复现性：支持脚本化构建、批量测试、统一口径统计和材料导出；
+  \item 可扩展性：便于未来增加新的数值后端、调度策略和展示模块。
+\end{enumerate}
+
+\subsection{对标作品与竞品分析}
+
+本作品不存在传统互联网意义上的商业竞品，但存在明确的技术对标对象：一类是以 SuiteSparseWrapper/KLU 为代表的单体稀疏直接法基线，另一类是只更换数值后端、但不利用矩阵结构的通用稀疏求解方案。对比结果如表~\ref{tab:competitor} 所示。
+
+\begin{table}[H]
+\centering
+\caption{本作品与对标方案比较}
+\label{tab:competitor}
+\begin{tabular}{p{3.2cm}p{5.1cm}p{5.5cm}}
+\toprule
+维度 & 基线/通用方案 & 本作品 \\
+\midrule
+结构利用方式 & 将矩阵整体处理，结构不显式 & DM/BTF 分解后形成 UBTF 与 Block-DAG \\
+并行能力来源 & 依赖底层库内部并行，不易控制 & 块级并行 + work-stealing 调度 \\
+选路方式 & 固定流程或人工调参 & AUTO 按矩阵画像自适应决策 \\
+稳健性 & 缺少统一回退闭环 & 通过信号检测触发稳健回退 \\
+可解释性 & 难以说明为何快或为何慢 & 建立结构、fill-in、耗时之间的证据链 \\
+展示能力 & 以命令行和报告为主 & 增加前端展示页面，适合答辩与演示 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{核心性能指标}
+
+本作品重点关注以下指标：
+\begin{itemize}
+  \item 精度门槛：是否满足 $err_{user}\le\varepsilon$；
+  \item 加权总耗时：是否显著降低 $\sum w_i t_i$；
+  \item 单用例加速比：是否在大权重、大规模样本上获得稳定收益；
+  \item 扩展性与复现性：是否支持脚本化构建、批量复现和二次集成。
+\end{itemize}
+
+根据现有项目报告，Rerank 在 Final15 上全部满足精度门槛，
+加权总耗时由 $7937.462\ \mathrm{ms}$ 降至 $3995.650\ \mathrm{ms}$，
+总体提升约 $1.99\times$。
+其中 Case 7 总耗时由 $4634.000\ \mathrm{ms}$ 降至 $1830.190\ \mathrm{ms}$，
+Case 9 由 $3642.620\ \mathrm{ms}$ 降至 $981.908\ \mathrm{ms}$，
+说明收益主要集中在大规模、结构可分的样本上。
+
+\subsection{可行性与应用价值}
+
+从技术可行性看，本作品并非空泛方案，而是已经落地为可被测试框架调用的求解库与可直接浏览的展示页面。底层求解引擎完成了结构分解、数值求解、异常检测和统计输出等核心链路；上层展示界面进一步将算法思路、结果证据和项目材料统一组织为易理解的作品形态。
+
+从应用价值看，本作品的意义不仅在于“提高一个比赛分数”，更在于为大规模稀疏线性方程组求解提供了一套兼顾性能、稳健性、可解释性和可展示性的工程实现。该模式既适合竞赛提交，也适合后续作为教学案例、开源项目或工程原型继续演进。
+
+\section{概要设计}
+
+\subsection{设计目标与原则}
+
+为了使作品既能满足竞赛技术指标，又具备较强的工程完整性，本作品在概要设计阶段明确了以下原则：
+\begin{enumerate}
+  \item 先结构、后数值。优先挖掘矩阵结构带来的全局收益，再考虑块内数值核选择；
+  \item 先稳健、后提速。任何性能优化均以不突破精度门槛为前提；
+  \item 先解释、后堆料。每一项优化都需要能够回溯到结构变化、fill-in 变化或关键路径缩短；
+  \item 先交付、后扩展。项目既要可比赛提交，也要为后续开源、教学和二次开发保留接口。
+\end{enumerate}
+
+\subsection{总体架构}
+
+本作品采用“求解引擎 + 展示界面”的双层结构。底层是 BlockDAGLU 稀疏求解框架，上层是面向竞赛展示的项目展示界面。求解引擎负责矩阵分析、结构分解、并行调度和稳健回退；展示界面负责对项目背景、技术路线、性能结果和材料入口进行统一呈现。
+
+系统整体流程可概括为：
+\begin{equation}
+\begin{aligned}
+\text{Input}\rightarrow \text{Profile}\rightarrow \text{AUTO}
+&\rightarrow
+\begin{cases}
+\text{KLU 路线},\\
+\text{BLOCK 路线},
+\end{cases}\\
+&\rightarrow \text{Factor / Solve}\rightarrow \text{Check / Fallback}\rightarrow \text{Output}.
+\end{aligned}
+\end{equation}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.9\textwidth]{../contest/项目报告/image/system_flow.jpg}
+  \caption{系统总体流程图}
+  \label{fig:systemflow}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.9\textwidth]{../contest/项目报告/image/algorithm_flow.jpg}
+  \caption{算法流程图}
+  \label{fig:algorithmflow}
+\end{figure}
+
+\subsection{功能模块划分}
+
+本作品主要由以下模块组成：
+\begin{table}[H]
+\centering
+\caption{功能模块划分}
+\label{tab:modules}
+\begin{tabular}{p{4cm}p{9cm}}
+\toprule
+模块 & 主要职责 \\
+\midrule
+输入与预处理模块 & 读取 COO/CSR 数据并完成初步检查 \\
+画像分析模块 & 提取规模、NNZ、块结构、长尾风险等特征 \\
+AUTO 决策模块 & 在 KLU 与 BLOCK 之间选路，并给出线程与参数建议 \\
+结构分解模块 & 执行 DM/BTF，构造 UBTF 与块边界 \\
+并行调度模块 & 构建 Block-DAG，执行并行 factor 与按依赖求解 \\
+稳健回退模块 & 对 rcond、pivot growth、NaN/Inf、残差等信号做检测 \\
+测试统计模块 & 输出 \texttt{runs.csv}、\texttt{margin.csv} 与 \texttt{summary.txt} 等结果文件 \\
+展示界面模块 & 图文展示项目背景、技术路线、性能结果与材料入口 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{模块层次与调用关系}
+
+本作品可划分为四层：
+\begin{enumerate}
+  \item 展示层：展示页面与项目说明文档；
+  \item 应用层：测试脚本、报告整理与结果汇总；
+  \item 核心算法层：AUTO、DM/BTF、UBTF、Block-DAG、KLU/BLOCK 求解；
+  \item 支撑层：线程池、缓存、动态库加载与构建脚本。
+\end{enumerate}
+
+从调用关系来看，展示层不直接参与数值求解，但调用应用层产生的结果；应用层通过核心算法层产生测试数据与汇总数据；支撑层则为核心算法层提供并行、缓存和构建运行基础设施。也就是说，展示层解决“如何讲清楚”，算法层解决“如何做得快且稳”，而应用层和支撑层负责把两者连接起来。
+
+\subsection{业务流程与典型用例}
+
+从用户视角看，本作品至少包含以下几类典型用例：
+
+\begin{table}[H]
+\centering
+\caption{典型用例设计}
+\label{tab:usecase}
+\begin{tabular}{p{2cm}p{3.2cm}p{3.2cm}p{4.6cm}}
+\toprule
+编号 & 用例名称 & 输入 & 输出 \\
+\midrule
+UC-01 & 求解单个稀疏线性系统 & 稀疏矩阵与右端项 & 解向量、误差与残差 \\
+UC-02 & 批量运行 Final15 基准 & 数据集与脚本参数 & 分 case 结果、加权总耗时、汇总文件 \\
+UC-03 & 查看项目成果展示页面 & 浏览器访问页面 & 项目介绍、图表、材料入口 \\
+UC-04 & 作为库集成到其他工程 & C++ API 与矩阵数据 & 可复用的求解能力 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+系统的业务流程可以归纳为：用户准备矩阵数据或数据集，系统完成输入解析和画像分析，AUTO 选择求解路线并配置线程与关键参数，求解引擎完成 factor/solve 并进行误差检查，最终将结果输出到文件、控制台或展示界面中。
+
+\subsection{核心数据流设计}
+
+为了保证方案的可解释性，本作品在概要设计阶段就明确了核心数据流：
+\begin{equation}
+A,b \rightarrow \text{Profile} \rightarrow \text{Route Decision}
+\rightarrow \text{Factorization} \rightarrow \text{Solve}
+\rightarrow \text{Metrics} \rightarrow \text{Visualization}.
+\end{equation}
+
+该数据流的前半段负责做出正确的结构化决策，中间阶段负责完成高效且稳健的求解，后半段则把结果转化为可复现实验和可展示材料。相比只关注“输入到输出”的黑盒流程，这种数据流设计更有利于定位问题来源和拆解优化收益。
+
+\subsection{人机界面概述}
+
+本作品包含两类人机交互界面：
+\begin{itemize}
+  \item 命令行界面：用于构建、测试、基准对比与结果导出；
+  \item 前端展示界面：用于浏览项目介绍、技术路线、性能结果与材料入口。
+\end{itemize}
+
+其中前端展示界面主要包含首页总览、技术路线区、性能结果区、图集区和材料区五个部分。首页负责在最短时间内讲清项目价值，技术路线区负责解释方法路径，性能结果区负责呈现客观数据，图集区负责展示结构和流程证据，材料区则承担“统一入口”的角色。
+
+\subsection{部署与运行架构}
+
+在部署层面，本作品支持三种使用形态：
+\begin{enumerate}
+  \item 作为竞赛兼容项目运行，生成 DLL 并接入测试框架；
+  \item 作为核心求解库集成到其他 C++ 工程中；
+  \item 作为静态展示站进行项目成果介绍和答辩演示。
+\end{enumerate}
+
+这种设计使得项目不局限于“比赛代码仓库”，而具备更完整的软件作品形态。算法核心、测试脚本、展示页面与文稿材料被清晰拆分，又能通过目录结构和脚本联动形成统一交付。
+
+\section{详细设计}
+
+\subsection{界面设计}
+
+本作品新增了一个静态展示界面，文件位于 \texttt{showcase/index.html}。界面设计原则强调“技术型、结构化、可讲解”，其主要区域包括首页总览、技术路线区、性能结果区、图集区和材料入口区。页面整体围绕“30 秒讲清作品、3 分钟讲清方法、10 分钟讲清证据”这一目标展开设计。
+
+\paragraph{首页与总览区设计}
+首页承担“30 秒讲清作品”的任务，因此采用大标题、结论卡片和指标摘要结合的方式，重点突出作品主题、技术主线与最终结果。首页不堆砌细节，而是先建立一个清晰判断：本作品不是简单更换求解库，而是通过结构分解与并行调度重构求解前端。
+
+\paragraph{技术路线区设计}
+技术路线区采用流程图和双路线卡片设计，让评委能够快速理解输入矩阵先进入画像分析，再由 AUTO 决定走 KLU 或 BLOCK，BLOCK 路线下进一步由 DM/BTF 生成 UBTF，并进入 Block-DAG 调度。该区域强调的是“决策链路”，而不是单一算法名词。
+
+\paragraph{性能结果区设计}
+性能结果区支持按策略和排序方式筛选 15 个测试用例。设计该模块的目的不是只展示一个加速比，而是帮助用户看到哪些 case 适合 BLOCK，哪些 case 更适合 KLU，以及收益与权重之间的关系。
+
+\paragraph{材料入口区设计}
+为了让展示页具备文档门户属性，材料入口区统一汇聚技术报告、路演讲稿、答辩问答、README、架构说明和核心源码入口。这使展示页面同时具备“展示”和“索引”两种能力。
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.9\textwidth]{../contest/项目报告/image/klu_vs_block_pipeline.jpeg}
+  \caption{KLU 与 BLOCK 路线对比图}
+  \label{fig:kluvsblock}
+\end{figure}
+
+\subsection{数据组织设计}
+
+本作品不是互联网业务系统，不依赖传统关系数据库，因此没有复杂的业务表结构。系统主要处理的数据对象是矩阵、块结构、调度依赖和测试结果，其组织方式如表~\ref{tab:dataorg} 所示。
+
+\begin{table}[H]
+\centering
+\caption{数据组织设计}
+\label{tab:dataorg}
+\begin{tabular}{p{3.8cm}p{3cm}p{6cm}}
+\toprule
+数据类型 & 存储形式 & 说明 \\
+\midrule
+输入矩阵 & COO / CSR / CSC & 同时服务结构分析与数值分解 \\
+分解结果 & UBTF、P/Q、块边界 $R$ & 支撑 BLOCK 路线 \\
+任务依赖 & Block-DAG 邻接关系 & 支撑并行调度 \\
+测试结果 & CSV / TXT & 支撑复现实验与性能分析 \\
+展示内容 & HTML / CSS / JS / 图片 / PDF / Markdown & 支撑项目演示与材料浏览 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+这种“轻数据库、重文件”的组织方式更符合科学计算项目的实际需求。一方面，它避免引入额外数据库维护成本；另一方面，它天然适配脚本化构建、批量运行和跨平台迁移。
+
+\subsection{核心类与接口设计}
+
+从源码实现看，本作品的核心逻辑围绕求解器、分块求解、线程池和展示前端展开。主要模块如表~\ref{tab:interfaces} 所示。
+
+\begin{table}[H]
+\centering
+\caption{核心类与接口设计}
+\label{tab:interfaces}
+\begin{tabular}{p{4.2cm}p{3.6cm}p{4.2cm}}
+\toprule
+文件/模块 & 角色 & 主要职责 \\
+\midrule
+\texttt{solver.h} & 求解器接口层 & 提供 \texttt{set\_matrix / analyze / factor / solve} 等统一调用入口 \\
+\texttt{solver.cpp} & 求解器调度层 & 承担 AUTO 选路、模式切换和全流程控制 \\
+\texttt{ubtf\_block\_solver.h} & 分块求解层 & 执行 DM/BTF 后的分块 factor 与按依赖求解 \\
+\texttt{thread\_pool.h} & 并行支撑层 & 负责 worker 复用、任务提交和 work-stealing \\
+\texttt{showcase/app.js} & 展示交互层 & 实现页面筛选、数据卡片和材料入口交互 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{求解器生命周期设计}
+
+为了减少接口复杂度，本作品将求解器的典型生命周期统一抽象为：
+\begin{equation}
+\texttt{set\_matrix} \rightarrow \texttt{analyze} \rightarrow \texttt{factor} \rightarrow \texttt{solve}.
+\end{equation}
+
+其中 \texttt{analyze} 阶段负责画像分析、结构判断和路线选择；\texttt{factor} 阶段负责完成符号与数值分解；\texttt{solve} 阶段则在已有分解结果上完成右端项求解。该生命周期设计有两个优点：其一，方便作为库被上层项目集成；其二，便于对每个阶段分别做性能统计和错误定位。
+
+\subsection{关键算法设计}
+
+\subsubsection{DM/BTF 结构分解}
+
+DM/BTF 是本作品最关键的结构化处理手段之一。其目标是利用矩阵非零模式的结构信息，将原始问题转换成块上三角形式：
+\begin{equation}
+P A Q =
+\begin{bmatrix}
+A_{11} & A_{12} & \cdots & A_{1k}\\
+0 & A_{22} & \cdots & A_{2k}\\
+\vdots & \ddots & \ddots & \vdots\\
+0 & 0 & \cdots & A_{kk}
+\end{bmatrix},
+\end{equation}
+其中 $P,Q$ 为置换矩阵，$A_{ii}$ 为对角块。经过这一变换后，原始矩阵的结构被显式化为“多个对角块 + 跨块依赖”，为后续并行 factor 与依赖求解打下基础。
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.9\textwidth]{../contest/项目报告/image/block_inner_reorder_merge.jpeg}
+  \caption{块内重排与合并示意图}
+  \label{fig:blockinner}
+\end{figure}
+
+\subsubsection{Block-DAG 并行调度}
+
+在 UBTF 结构上，可将每个对角块视为图节点，将跨块上三角关系视为依赖边，于是得到块级依赖图：
+\begin{equation}
+G=(V,E),\qquad V=\{B_1,B_2,\dots,B_k\}.
+\end{equation}
+若块 $B_i$ 的求解依赖于块 $B_j$ 的结果，则有边 $(B_j,B_i)\in E$。在此基础上，系统通过线程池与 work-stealing 机制执行任务并行，以降低静态分配造成的负载不均与关键路径拖尾。
+
+对调度开销与并行收益的平衡，可用临界路径长度 $L_{\mathrm{cp}}$ 粗略刻画：
+\begin{equation}
+T_{\mathrm{parallel}}\approx \max(L_{\mathrm{cp}},\frac{W}{p}) + T_{\mathrm{sched}},
+\end{equation}
+其中 $W$ 为总工作量，$p$ 为线程数，$T_{\mathrm{sched}}$ 为调度开销。由此可见，分块并不等价于必然加速，只有当结构分解带来的关键路径压缩和并行度提升能够覆盖调度开销时，BLOCK 路线才真正占优。
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.9\textwidth]{../contest/项目报告/image/work_stealing_pool.jpeg}
+  \caption{Work-stealing 线程池调度示意}
+  \label{fig:stealing}
+\end{figure}
+
+\subsubsection{AUTO 自适应选路}
+
+本作品不会对测试编号做硬编码，而是依据矩阵画像做决策。可将其抽象为：
+\begin{equation}
+\pi(A)=
+\arg\min_{m\in\{\mathrm{KLU},\mathrm{BLOCK}\}}
+\widehat{T}(m\,|\,A)
+\quad \text{s.t.}\quad
+err(m,A)\le \varepsilon.
+\end{equation}
+
+在实现上，AUTO 会参考规模、NNZ、块数量、最大块比例、可并行性和异常信号等特征。若分块收益足以覆盖构建成本，则倾向选择 BLOCK；若矩阵全局耦合强或关键块过大，则保留 KLU 路线。这使系统不再依赖人工经验切换模式，而是能根据输入画像自适应做出选择。
+
+\subsubsection{精度检测与稳健回退}
+
+误差定义为：
+\begin{equation}
+err(x)=\frac{\|x-x^\ast\|_2}{\|x^\ast\|_2},
+\end{equation}
+其中 $x^\ast$ 为参考解。进一步定义误差裕量：
+\begin{equation}
+margin=\varepsilon-err_{user}.
+\end{equation}
+
+当检测到分解失败、NaN/Inf、rcond 过低、pivot growth 异常或裕量收窄等情况时，系统将切换到更保守的参数组，必要时回退到更稳健的单体路径，以优先保证精度门槛。该机制的本质并不是“失败后放弃优化”，而是让优化过程具备工程可用性。
+
+\subsubsection{缓存、内存复用与动态加载}
+
+除了算法本身，本作品还针对工程层面做了多项优化。首先，线程池通过复用 worker 减少频繁创建和销毁线程的开销；其次，部分中间缓冲区在多轮评测中可以复用，从而减少重复申请和释放内存造成的波动；再次，对外部依赖的动态库采用清晰的加载和运行路径约定，降低环境配置成本。上述措施虽然不改变渐进复杂度，却明显提升了整体运行稳定性。
+
+\subsubsection{性能优化策略总结}
+
+综合来看，本作品的性能提升并非来自单点技巧，而是来自多项策略的协同：前端结构分解降低 fill-in，AUTO 选路避免不必要的构建开销，块级并行调度压缩关键路径，异常检测与回退机制保障通过率，线程池复用与局部亲和性策略降低长尾波动。正是这些策略的叠加，才形成了“快、稳、可解释”的整体效果。
+
+\subsubsection{结构到性能的证据链}
+
+本作品并不只报告“快了多少”，而是尝试建立从结构变化到性能变化的解释链：
+\begin{equation}
+\text{Structure}
+\rightarrow
+\text{fill-in}
+\rightarrow
+\text{decomp\_ms}
+\rightarrow
+T_{\mathrm{weighted}}.
+\end{equation}
+
+也就是说，结构被分解得更合理，fill-in 更低，分解时间就更容易下降，最终会传导到加权总耗时。通过这一证据链，项目可以对性能收益给出可解释说明，而不是只给出一个总分数字。
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.9\textwidth]{../contest/项目报告/image/evidence_chain.jpeg}
+  \caption{结构—填充—耗时证据链}
+  \label{fig:evidence}
+\end{figure}
+
+\subsection{技术创新总结}
+
+本作品的核心创新可以概括为四点：
+\begin{enumerate}
+  \item 利用 DM/BTF 对稀疏矩阵进行结构显式化，而非整体黑盒处理；
+  \item 基于 Block-DAG 与 work-stealing 实现块级并行调度，重点压缩关键路径和长尾块；
+  \item 使用 AUTO 基于画像自适应选择求解路线与线程策略，减少人工调参成本；
+  \item 建立精度检测与稳健回退机制，在性能提升前提下保证精度门槛稳定通过。
+\end{enumerate}
+
+\section{测试报告}
+
+\subsection{测试目标与策略}
+
+为了保证作品质量，本作品围绕正确性、精度、性能、并行性、稳健性和可用性六个维度展开测试。测试策略强调“结果可复核、过程可解释、问题可回归”。因此，除最终加权总耗时外，系统还会记录逐 case 总耗时、分阶段耗时、误差、裕量和策略分布，确保性能结论具有可追溯性。
+
+\subsection{测试环境}
+
+根据项目构建与运行文档，本作品主要测试环境如表~\ref{tab:env} 所示。
+
+\begin{table}[H]
+\centering
+\caption{测试环境}
+\label{tab:env}
+\begin{tabular}{p{4cm}p{8cm}}
+\toprule
+项目 & 配置 \\
+\midrule
+操作系统 & Windows \\
+编译环境 & Visual Studio 2022 / MSVC \\
+构建工具 & CMake 3.20+ \\
+运行依赖 & KLU、BTF、AMD、COLAMD 等动态库 \\
+数据集 & \texttt{data/FinalTestCases/1\textasciitilde 15} \\
+运行方式 & 脚本化构建与基准测试 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{功能测试}
+
+功能测试聚焦于系统链路是否完整和核心能力是否可被稳定调用。代表性测试项如表~\ref{tab:functiontest} 所示。
+
+\begin{table}[H]
+\centering
+\caption{功能测试样例}
+\label{tab:functiontest}
+\begin{tabular}{p{3.8cm}p{4.0cm}p{3.8cm}}
+\toprule
+测试项 & 预期结果 & 实际结果 \\
+\midrule
+矩阵输入与预处理 & 能正确读取矩阵并完成基础检查 & 通过 \\
+AUTO 路线选择 & 能根据画像选择 KLU 或 BLOCK & 通过 \\
+BLOCK 因子分解 & 能完成 DM/BTF、分块 factor 与依赖求解 & 通过 \\
+误差与裕量计算 & 能输出门槛比较和误差统计 & 通过 \\
+基准结果导出 & 能生成 \texttt{runs.csv}、\texttt{margin.csv}、\texttt{summary.txt} & 通过 \\
+展示页面访问 & 页面可正常打开并查看材料入口 & 通过 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{测试方法与指标定义}
+
+本作品主要从以下维度进行测试：
+\begin{itemize}
+  \item 功能正确性测试：是否能完成 \texttt{analyze / factor / solve}；
+  \item 精度测试：是否满足 $err_{user}\le\varepsilon$；
+  \item 性能测试：加权总耗时、单用例耗时与分阶段耗时；
+  \item 并行测试：不同线程数下的效率与退化情况；
+  \item 稳健性测试：病态矩阵和异常信号下的回退表现；
+  \item 可用性测试：脚本、核心库与展示页面是否可正常使用。
+\end{itemize}
+
+加权总耗时定义为：
+\begin{equation}
+T_{\mathrm{weighted}}=\sum_{i=1}^{15} w_i t_i,
+\end{equation}
+加速比定义为：
+\begin{equation}
+S=\frac{T_{\mathrm{baseline}}}{T_{\mathrm{ours}}},
+\end{equation}
+降幅定义为：
+\begin{equation}
+R=\frac{T_{\mathrm{baseline}}-T_{\mathrm{ours}}}{T_{\mathrm{baseline}}}\times 100\%.
+\end{equation}
+
+\subsection{关键测试结果}
+
+根据项目报告中的 Final15 统计结果，关键结果如表~\ref{tab:keyresult} 所示。
+
+\begin{table}[H]
+\centering
+\caption{关键测试结果}
+\label{tab:keyresult}
+\begin{tabular}{p{5cm}p{3cm}p{3cm}p{2.5cm}}
+\toprule
+指标 & 基线 & 本作品 & 结果 \\
+\midrule
+Final15 加权总耗时 & $7937.462\ \mathrm{ms}$ & $3995.650\ \mathrm{ms}$ & $1.99\times$ \\
+Case 7 总耗时 & $4634.000\ \mathrm{ms}$ & $1830.190\ \mathrm{ms}$ & $2.532\times$ \\
+Case 9 总耗时 & $3642.620\ \mathrm{ms}$ & $981.908\ \mathrm{ms}$ & $3.710\times$ \\
+精度门槛 & $err_{user}\le\varepsilon$ & 全部满足 & 15/15 通过 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}
+\begin{axis}[
+  ybar,
+  bar width=11pt,
+  width=0.95\textwidth,
+  height=7.2cm,
+  ylabel={耗时 / ms},
+  symbolic x coords={Final15,Case7,Case9},
+  xtick=data,
+  enlarge x limits=0.22,
+  ymin=0,
+  legend style={at={(0.5,1.03)},anchor=south,legend columns=2},
+  nodes near coords,
+  every node near coord/.append style={font=\scriptsize, rotate=90, anchor=west},
+  ymajorgrids=true
+]
+\addplot coordinates {(Final15,7937.462) (Case7,4634.000) (Case9,3642.620)};
+\addplot coordinates {(Final15,3995.650) (Case7,1830.190) (Case9,981.908)};
+\legend{Baseline,Ours}
+\end{axis}
+\end{tikzpicture}
+\caption{关键性能结果柱状对比}
+\label{fig:perfbar}
+\end{figure}
+
+\subsection{Final15 分 case 测试结果}
+
+为了避免“只有总分、没有来源”的问题，本作品进一步给出 Final15 的逐 case 统计结果。表~\ref{tab:finalcases} 可以看出，默认采用 BLOCK 路线的主要是 case 4、7、9、13，这些样本普遍具有更明显的块结构或更高的并行收益空间。
+
+\begin{table}[H]
+\centering
+\caption{Final15 分 case 结果与策略分布}
+\label{tab:finalcases}
+\scriptsize
+\setlength{\tabcolsep}{3pt}
+\renewcommand{\arraystretch}{1.14}
+\begin{tabular}{r r r c p{4.6cm} r r c}
+\toprule
+case & $n$ & nnz & weight & strategy & baseline & ours & speedup \\
+\midrule
+1 & 8226 & 94723 & 0.10 & KLU (ordering=COLAMD, btf=0, scale=0) & 28.176 & 16.538 & 1.704 \\
+2 & 8392 & 98146 & 0.10 & KLU (ordering=COLAMD, btf=0, scale=0) & 27.573 & 18.277 & 1.509 \\
+3 & 17033 & 389381 & 0.10 & KLU (ordering=COLAMD, btf=0, scale=0) & 159.192 & 97.516 & 1.632 \\
+4 & 19698 & 718507 & 0.10 & BLOCK (DM/BTF + parallel blocks; block-KLU big: retry) & 385.355 & 122.430 & 3.148 \\
+5 & 37979 & 1045703 & 0.15 & KLU (ordering=COLAMD, btf=0, scale=0) & 928.495 & 621.608 & 1.494 \\
+6 & 43866 & 630049 & 0.25 & KLU (ordering=COLAMD, btf=0, scale=0) & 283.359 & 170.915 & 1.658 \\
+7 & 61531 & 3047885 & 0.50 & BLOCK (DM/BTF + parallel blocks; block-KLU big: retry) & 4634.000 & 1830.190 & 2.532 \\
+8 & 9589 & 191370 & 0.10 & KLU (ordering=COLAMD, btf=0, scale=0) & 101.849 & 71.347 & 1.428 \\
+9 & 57450 & 3334561 & 0.50 & BLOCK (DM/BTF + parallel blocks; block-KLU big: retry) & 3642.620 & 981.908 & 3.710 \\
+10 & 33236 & 1017920 & 0.15 & KLU (ordering=COLAMD, btf=0, scale=0) & 807.670 & 617.403 & 1.308 \\
+11 & 33468 & 1624194 & 0.15 & KLU (ordering=COLAMD, btf=0, scale=0) & 964.799 & 429.715 & 2.245 \\
+12 & 67869 & 3486957 & 0.50 & KLU (ordering=COLAMD, btf=0, scale=0) & 5575.370 & 4077.820 & 1.367 \\
+13 & 51278 & 1166362 & 0.25 & BLOCK (DM/BTF + parallel blocks; block-KLU big: retry) & 1587.320 & 709.366 & 2.238 \\
+14 & 31537 & 180612 & 0.15 & KLU (ordering=COLAMD, btf=0, scale=0) & 243.627 & 172.205 & 1.415 \\
+15 & 17978 & 577035 & 0.10 & KLU (ordering=COLAMD, btf=0, scale=0) & 318.941 & 218.699 & 1.458 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{并行与稳定性测试分析}
+
+从并行表现看，线程数并非越大越好。BLOCK 路线的并行收益受对角块数量和依赖关系约束，而 KLU 路线的主要数值核在当前调用方式下更接近串行，因此过高线程数可能只增加调度和带宽竞争成本。结合项目材料中的 sweep 结果，可以将 4--8 线程视为较稳健的“甜点区”，其中 \texttt{threads=6} 在给定口径下表现最佳。
+
+在混合架构 CPU 上，本作品还验证了 P 核亲和性策略的收益。控制变量实验表明，在 \texttt{USERALGO\_MODE=auto} 且线程数自适应的条件下，\texttt{USERALGO\_AFFINITY=pcores} 相对 \texttt{off} 具有稳定改进，如表~\ref{tab:affinity} 所示。
+
+\begin{table}[H]
+\centering
+\caption{P 核亲和性消融实验结果}
+\label{tab:affinity}
+\begin{tabular}{p{2.8cm}p{3cm}p{4.8cm}}
+\toprule
+Affinity & Weighted Ms & 结果 \\
+\midrule
+\texttt{off} & 5198.264 & 基线 \\
+\texttt{pcores} & 4266.575 & 相比 \texttt{off} 为 $1.218\times$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+这说明除算法级优化外，线程池 worker 的局部亲和性策略也能在混合架构 CPU 上进一步压缩尾部抖动，尤其对大权重用例更有帮助。
+
+\subsection{测试结果分析}
+
+测试结果表明：
+\begin{enumerate}
+  \item 本作品并未强制所有用例走 BLOCK，而是通过 AUTO 对结构适合分块的 case 4、7、9、13 默认采用 BLOCK 路线；
+  \item 对结构更适合整体处理的用例，则保留 KLU 路线，避免分块构建开销抵消收益；
+  \item 收益主要集中在 \texttt{decomp/factor} 阶段，说明结构分解与关键路径压缩起到了决定性作用；
+  \item P/E 核感知线程调度属于系统级增益，可与线程数自适应形成叠加收益。
+\end{enumerate}
+
+\subsection{缺陷修正与结果闭环}
+
+在项目开发和测试过程中，团队主要围绕以下问题进行了修正与闭环：
+\begin{enumerate}
+  \item 针对部分矩阵在快参数下分解失败的问题，增加“失败重试 + 稳健参数兜底”路径；
+  \item 针对线程数过高引起的退化，增加默认线程上限和更稳健的自适应策略；
+  \item 针对展示材料分散的问题，新增静态展示页面统一聚合报告、源码和图表；
+  \item 针对性能解释不足的问题，补充结构图、证据链图和分 case 表格，形成“数据---结论---说明”的闭环。
+\end{enumerate}
+
+\subsection{多维度技术指标}
+
+\begin{table}[H]
+\centering
+\caption{多维度技术指标}
+\label{tab:metric}
+\begin{tabular}{p{4cm}p{8cm}}
+\toprule
+维度 & 指标表现 \\
+\midrule
+运行速度 & Final15 总体约 $1.99\times$ 提升，Case 9 达到 $3.710\times$ \\
+安全性 & 本地离线运行，不涉及用户隐私与联网存储 \\
+扩展性 & 核心求解框架与竞赛兼容层解耦，支持可插拔后端 \\
+部署方便性 & 提供 CMake、PowerShell 脚本与最小示例 \\
+可用性 & 同时具备核心库、测试脚本、技术报告与展示页面 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{安装及使用}
+
+\subsection{安装环境要求}
+
+\begin{itemize}
+  \item Windows 操作系统；
+  \item Visual Studio 2022 或 Build Tools；
+  \item CMake 3.20 及以上；
+  \item 所需动态库已加入 \texttt{PATH}；
+  \item 建议具备多核 CPU 环境，以便验证 BLOCK 路线的并行收益。
+\end{itemize}
+
+\subsection{默认安装过程}
+
+在项目根目录下执行：
+\begin{quote}
+\ttfamily\small
+powershell -NoProfile -ExecutionPolicy Bypass\\
+-File .\textbackslash scripts\textbackslash build.ps1 -Config Release
+\end{quote}
+
+若只构建核心库，可执行：
+\begin{quote}
+\ttfamily\small
+powershell -NoProfile -ExecutionPolicy Bypass\\
+-File .\textbackslash scripts\textbackslash build.ps1 -Config Release -NoToolchain
+\end{quote}
+
+构建完成后，生成的库文件可用于竞赛评测、二次开发或基准测试。若环境变量和动态库路径配置正确，一般无需额外修改源码即可运行。
+
+\subsection{运行依赖与目录说明}
+
+\begin{table}[H]
+\centering
+\caption{主要目录与用途说明}
+\label{tab:dirs}
+\begin{tabular}{p{4.2cm}p{7.8cm}}
+\toprule
+目录/文件 & 作用说明 \\
+\midrule
+\texttt{blockdaglu/} & 核心求解器源码与头文件 \\
+\texttt{scripts/} & 构建、测试和基准运行脚本 \\
+\texttt{bench/out/} & 基准测试输出目录，保存 \texttt{runs.csv} 等文件 \\
+\texttt{contest/} & 比赛材料、技术报告和答辩文档 \\
+\texttt{showcase/} & 前端展示页面和作品文稿 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{典型使用流程}
+
+\paragraph{方式一：运行基准测试}
+\begin{quote}
+\ttfamily\small
+powershell -NoProfile -ExecutionPolicy Bypass\\
+-File .\textbackslash scripts\textbackslash run\_benchmark.ps1
+\end{quote}
+结果会输出到 \path{bench/out/<timestamp>/} 目录下，
+包括 \path{runs.csv}、\path{margin.csv} 和 \path{summary.txt}。
+
+\paragraph{方式二：作为 C++ 求解库集成}
+\begin{verbatim}
+#include "blockdaglu/solver.h"
+blockdaglu::Solver s;
+s.set_matrix(std::move(A));
+s.analyze();
+s.factor();
+s.solve_in_place(b);
+\end{verbatim}
+
+\paragraph{方式三：打开展示页面}
+展示页面位于 \texttt{showcase/index.html}，可直接双击打开，也可执行
+\begin{verbatim}
+python3 -m http.server
+\end{verbatim}
+随后在浏览器访问页面，查看项目介绍、技术路线和性能结果。
+
+\paragraph{方式四：阅读与导出作品文稿}
+作品文稿的 Markdown、DOCX、LaTeX 与 PDF 版本均位于 \texttt{showcase/} 目录下，适合分别用于继续编辑、排版导出与正式提交。
+
+\subsection{使用建议}
+
+若以比赛成绩为目标，建议优先保持默认 AUTO 路线和默认参数，以确保精度和稳健性；若以研究调优为目标，可进一步测试线程数、亲和性和更细粒度的参数组合；若以演示答辩为目标，建议同时打开展示页面和正式文稿，以形成“界面讲解 + 数据支撑”的双重展示效果。
+
+\subsection{常见问题与处理建议}
+
+\begin{table}[H]
+\centering
+\caption{常见问题与处理建议}
+\label{tab:faq}
+\begin{tabular}{p{4cm}p{8cm}}
+\toprule
+问题 & 处理建议 \\
+\midrule
+构建失败 & 检查 Visual Studio、CMake 和依赖动态库是否安装完整 \\
+运行时找不到 DLL & 检查相关动态库是否加入 \texttt{PATH} 或位于可执行文件附近 \\
+线程数增加后反而变慢 & 优先使用 AUTO 默认设置，或在 4--8 线程区间内测试 \\
+展示页图片无法加载 & 建议在 \texttt{showcase/} 目录下使用本地 HTTP 服务打开页面 \\
+文稿需要继续修改 & 优先编辑 Markdown 版本，再同步生成 DOCX 或重新编译 PDF \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{项目总结}
+
+\subsection{项目开发过程回顾}
+
+本作品从一开始就不是单纯的算法实验，而是一个兼顾性能、稳健性、可解释性和展示效果的完整软件工程项目。开发过程中，团队逐步认识到，仅依赖传统单体稀疏求解库难以稳定解决 fill-in、关键路径和长尾块问题，因此将研究重点转移到结构分解与任务调度上，最终形成了以 DM/BTF、UBTF、Block-DAG、AUTO 和稳健回退为核心的整体方案。
+
+\subsection{项目收获与能力提升}
+
+通过本项目，团队在以下方面都获得了明显提升：一是对稀疏矩阵结构分析、数值线性代数和工程化稳健性的理解更加系统；二是对线程池、并行调度和性能测试方法有了更深实践；三是学会了将复杂的底层算法转化为评委可理解、用户可感知的展示材料；四是在项目统筹、任务拆分、文档撰写和成果表达方面积累了完整经验。
+
+\subsection{作品价值与推广意义}
+
+本作品的价值不仅体现在竞赛分数上，更体现在其具备了“可继续生长”的作品形态。求解引擎可以作为后续研究和工程集成的基础，展示页面可以用于答辩、教学和成果推广，完整的技术文稿则为项目沉淀和二次开发提供了系统化资料。对于同类科学计算与软件工程融合项目，本作品具有一定示范意义。
+
+\subsection{项目局限与未来工作}
+
+目前，本作品仍存在一些局限：一是 AUTO 的代价模型仍可以继续细化；二是当矩阵退化为单一超大关键块时，并行收益仍受阿姆达尔定律限制；三是部分系统级优化对硬件平台具有一定依赖。后续升级方向包括：
+\begin{enumerate}
+  \item 继续细化代价模型，提高 AUTO 决策准确性；
+  \item 深入挖掘超大关键块场景下的块内并行能力；
+  \item 增强更多可插拔后端支持，适配更多工程环境；
+  \item 持续完善展示页面与文稿体系，使其具备更强的教学和成果发布价值。
+\end{enumerate}
+
+\section*{参考文献}
+\addcontentsline{toc}{section}{参考文献}
+
+\begin{enumerate}[label={[}\arabic*{]}]
+  \item Davis T A. \textit{Direct Methods for Sparse Linear Systems}. Philadelphia: SIAM, 2006.
+  \item Davis T A, Palamadai E. Algorithm 907: KLU, a Direct Sparse Solver for Circuit Simulation Problems[J]. \textit{ACM Transactions on Mathematical Software}, 2011.
+  \item Pothen A, Fan C J. Computing the Block Triangular Form of a Sparse Matrix[J]. \textit{ACM Transactions on Mathematical Software}, 1990.
+  \item Davis T A, Gilbert J R, Larimore S I, et al. A Column Approximate Minimum Degree Ordering Algorithm[J]. \textit{ACM Transactions on Mathematical Software}, 2004.
+  \item Microsoft. CPU Sets and Processor Affinity APIs[EB/OL]. Microsoft Learn.
+  \item BlockDAGLU 项目组. \textit{大规模稀疏线性方程组求解：结构分解、填充控制与并行调度的工程化实现}[R]. 2026.
+\end{enumerate}
+
+\end{document}

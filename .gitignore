@@ -1,0 +1,28 @@
+# 构建产物
+build/
+out/
+*.obj
+*.pdb
+*.ilk
+*.lib
+*.dll
+*.exe
+__pycache__/
+*.pyc
+
+# 基准输出
+results/
+artifacts/
+bench/out/
+*.png
+*.pdf
+
+# 数据集
+# 说明：本仓库计划直接发布竞赛测试用例数据；若后续体积过大或需要更优的分发方式，可改用 Git LFS 或下载脚本。
+
+# OS
+.DS_Store
+Thumbs.db
+# no datasets / contest bundles for gitee (no LFS)
+data/FinalTestCases/
+
