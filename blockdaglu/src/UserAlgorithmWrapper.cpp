@@ -41,3 +41,6 @@ COOMatrix UserAlgorithmWrapper::getU() {
   return solver_->getU();
 }
 
+const char* UserAlgorithmWrapper::selectedMode() const {
+  return solver_->selected_mode();
+}

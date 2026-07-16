@@ -394,6 +394,7 @@ static std::vector<int32_t> merge_block_boundaries(const std::vector<int32_t>& R
                                                    int32_t n,
                                                    int32_t target_blocks,
                                                    int32_t min_block_size) {
+  (void)min_block_size; // Retained for compatibility with historical tuning scripts.
   if (R.size() < 2) return {0, n};
   const int32_t nblocks = static_cast<int32_t>(R.size() - 1);
   if (nblocks <= 1) return {0, n};
@@ -2482,48 +2483,54 @@ bool solve_ubtf(const UbftfDecomposition& dec, const UbftfFactors& fac, std::vec
     const std::size_t workers = pool.thread_count();
     for (std::size_t t = 0; t < workers; ++t) {
       pool.submit([&]() {
-        while (ok.load(std::memory_order_acquire)) {
-          int32_t bid = -1;
-          {
-            std::unique_lock<std::mutex> lk(mtx);
-            cv.wait(lk, [&]() {
-              return !ok.load(std::memory_order_acquire) ||
-                     !ready.empty() ||
-                     done.load(std::memory_order_acquire) == dec.nblocks;
-            });
-            if (!ok.load(std::memory_order_acquire)) return;
-            if (done.load(std::memory_order_acquire) == dec.nblocks) return;
-            if (ready.empty()) continue;
-            bid = ready.back();
-            ready.pop_back();
-          }
+        try {
+          while (ok.load(std::memory_order_acquire)) {
+            int32_t bid = -1;
+            {
+              std::unique_lock<std::mutex> lk(mtx);
+              cv.wait(lk, [&]() {
+                return !ok.load(std::memory_order_acquire) ||
+                       !ready.empty() ||
+                       done.load(std::memory_order_acquire) == dec.nblocks;
+              });
+              if (!ok.load(std::memory_order_acquire)) return;
+              if (done.load(std::memory_order_acquire) == dec.nblocks) return;
+              if (ready.empty()) continue;
+              bid = ready.back();
+              ready.pop_back();
+            }
 
-          const auto t0 = (prof && topk > 0) ? Clock::now() : Clock::time_point{};
-          if (!solve_block(bid)) {
-            ok.store(false, std::memory_order_release);
-            cv.notify_all();
-            return;
-          }
-          if (prof && topk > 0) {
-            const auto t1 = Clock::now();
-            solve_ms[static_cast<std::size_t>(bid)] =
-              std::chrono::duration<double, std::milli>(t1 - t0).count();
-          }
+            const auto t0 = (prof && topk > 0) ? Clock::now() : Clock::time_point{};
+            if (!solve_block(bid)) {
+              ok.store(false, std::memory_order_release);
+              cv.notify_all();
+              return;
+            }
+            if (prof && topk > 0) {
+              const auto t1 = Clock::now();
+              solve_ms[static_cast<std::size_t>(bid)] =
+                std::chrono::duration<double, std::milli>(t1 - t0).count();
+            }
 
-          done.fetch_add(1, std::memory_order_acq_rel);
-          for (int32_t pred : dec.block_preds[static_cast<std::size_t>(bid)]) {
-            if (remaining[pred].fetch_sub(1, std::memory_order_acq_rel) == 1) {
-              {
-                std::lock_guard<std::mutex> lk(mtx);
-                ready.push_back(pred);
+            done.fetch_add(1, std::memory_order_acq_rel);
+            for (int32_t pred : dec.block_preds[static_cast<std::size_t>(bid)]) {
+              if (remaining[pred].fetch_sub(1, std::memory_order_acq_rel) == 1) {
+                {
+                  std::lock_guard<std::mutex> lk(mtx);
+                  ready.push_back(pred);
+                }
+                cv.notify_one();
               }
-              cv.notify_one();
+            }
+
+            if (done.load(std::memory_order_acquire) == dec.nblocks) {
+              cv.notify_all();
             }
           }
-
-          if (done.load(std::memory_order_acquire) == dec.nblocks) {
-            cv.notify_all();
-          }
+        } catch (...) {
+          ok.store(false, std::memory_order_release);
+          cv.notify_all();
+          return;
         }
       });
     }
@@ -2546,4 +2553,3 @@ bool solve_ubtf(const UbftfDecomposition& dec, const UbftfFactors& fac, std::vec
 
   return true;
 }
-

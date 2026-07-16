@@ -72,8 +72,8 @@ private:
                             double*,
                             int32_t*,
                             klu_common*);
-  using FnFreeSymbolic = void (*)(klu_symbolic**, klu_common*);
-  using FnFreeNumeric = void (*)(klu_numeric**, klu_common*);
+  using FnFreeSymbolic = int (*)(klu_symbolic**, klu_common*);
+  using FnFreeNumeric = int (*)(klu_numeric**, klu_common*);
 
   void* dll_{nullptr};
 

@@ -5,9 +5,12 @@
 #include <cmath>
 #include <chrono>
 #include <cstdint>
+#include <cstring>
 #include <deque>
 #include <limits>
 #include <iostream>
+#include <mutex>
+#include <sstream>
 #include <thread>
 #include <unordered_map>
 #include <unordered_set>
@@ -46,12 +49,29 @@ struct GlobalKluState {
 };
 
 namespace {
+static void release_global_klu_state(GlobalKluState& state) {
+  if (state.num) {
+    KluDynamic::instance().free_numeric(&state.num, &state.common);
+    state.num = nullptr;
+  }
+  if (state.sym && !state.sym_cache) {
+    KluDynamic::instance().free_symbolic(&state.sym, &state.common);
+    state.sym = nullptr;
+  }
+  state.sym_cache.reset();
+  state.sym = nullptr;
+}
+
 struct MatrixSigKey {
   int32_t n = 0;
   std::size_t nnz = 0;
   std::uint64_t sig = 0;
+  std::uint64_t sig2 = 0;
+  std::uint64_t value_sig = 0;
+  std::uint64_t config_sig = 0;
   bool operator==(const MatrixSigKey& o) const noexcept {
-    return n == o.n && nnz == o.nnz && sig == o.sig;
+    return n == o.n && nnz == o.nnz && sig == o.sig && sig2 == o.sig2 &&
+           value_sig == o.value_sig && config_sig == o.config_sig;
   }
 };
 
@@ -60,6 +80,9 @@ struct MatrixSigKeyHash {
     std::uint64_t x = k.sig;
     x ^= static_cast<std::uint64_t>(k.n) + 0x9e3779b97f4a7c15ull + (x << 6) + (x >> 2);
     x ^= static_cast<std::uint64_t>(k.nnz) + 0x9e3779b97f4a7c15ull + (x << 6) + (x >> 2);
+    x ^= k.sig2 + 0x9e3779b97f4a7c15ull + (x << 6) + (x >> 2);
+    x ^= k.value_sig + 0x9e3779b97f4a7c15ull + (x << 6) + (x >> 2);
+    x ^= k.config_sig + 0x9e3779b97f4a7c15ull + (x << 6) + (x >> 2);
     return static_cast<std::size_t>(x ^ (x >> 32));
   }
 };
@@ -76,20 +99,66 @@ static std::uint64_t compute_matrix_sig(int32_t n, const CooMatrix& coo) {
   const std::size_t nnz = coo.size();
   h = fnv1a64_mix(h, static_cast<std::uint64_t>(nnz));
 
-  const std::size_t k = std::min<std::size_t>(nnz, 1024);
-  for (std::size_t i = 0; i < k; ++i) {
-    const auto& t = coo[i];
+  for (const auto& t : coo) {
     const std::uint64_t r = static_cast<std::uint32_t>(std::get<0>(t));
     const std::uint64_t c = static_cast<std::uint32_t>(std::get<1>(t));
     h = fnv1a64_mix(h, (r << 32) ^ c);
   }
-  if (nnz > 1024) {
-    for (std::size_t i = 0; i < 64; ++i) {
-      const std::size_t idx = nnz - 1 - i;
-      const auto& t = coo[idx];
-      const std::uint64_t r = static_cast<std::uint32_t>(std::get<0>(t));
-      const std::uint64_t c = static_cast<std::uint32_t>(std::get<1>(t));
-      h = fnv1a64_mix(h, (r << 32) ^ c);
+  return h;
+}
+
+static std::uint64_t compute_matrix_sig2(int32_t n, const CooMatrix& coo) {
+  std::uint64_t h = 0x6a09e667f3bcc909ull ^ static_cast<std::uint64_t>(n);
+  for (const auto& t : coo) {
+    const std::uint64_t r = static_cast<std::uint32_t>(std::get<0>(t));
+    const std::uint64_t c = static_cast<std::uint32_t>(std::get<1>(t));
+    std::uint64_t x = (r << 32) ^ c ^ 0x9e3779b97f4a7c15ull;
+    x ^= x >> 30;
+    x *= 0xbf58476d1ce4e5b9ull;
+    x ^= x >> 27;
+    x *= 0x94d049bb133111ebull;
+    x ^= x >> 31;
+    h ^= x + 0x9e3779b97f4a7c15ull + (h << 6) + (h >> 2);
+  }
+  return h ^ static_cast<std::uint64_t>(coo.size());
+}
+
+static std::uint64_t compute_matrix_value_sig(const CooMatrix& coo) {
+  std::uint64_t h = 0xbb67ae8584caa73bull;
+  for (const auto& entry : coo) {
+    std::uint64_t bits = 0;
+    const double value = std::get<2>(entry);
+    static_assert(sizeof(bits) == sizeof(value), "double must be 64-bit");
+    std::memcpy(&bits, &value, sizeof(bits));
+    h = fnv1a64_mix(h, bits);
+  }
+  return h ^ static_cast<std::uint64_t>(coo.size());
+}
+
+static std::uint64_t compute_cache_config_sig(std::size_t build_threads) {
+  static constexpr const char* kNames[] = {
+    "USERALGO_BTF_IMPL",
+    "USERALGO_BTF_KLU_ORDERING",
+    "USERALGO_BTF_MAXWORK",
+    "USERALGO_DROP_ABS_LT",
+    "USERALGO_BLOCK_MERGE",
+    "USERALGO_BLOCK_MERGE_MAX_SIZE",
+    "USERALGO_DENSE_BLOCK_MAX",
+    "USERALGO_CSR_MODE",
+    "USERALGO_BLOCK_SCHED",
+  };
+  std::uint64_t h = fnv1a64_mix(1469598103934665603ull, build_threads);
+  for (const char* name : kNames) {
+    for (const char* p = name; *p; ++p) {
+      h = fnv1a64_mix(h, static_cast<unsigned char>(*p));
+    }
+    const char* value = blockdaglu_getenv_compat(name);
+    if (!value) {
+      h = fnv1a64_mix(h, 0xff);
+      continue;
+    }
+    for (const char* p = value; *p; ++p) {
+      h = fnv1a64_mix(h, static_cast<unsigned char>(*p));
     }
   }
   return h;
@@ -162,17 +231,24 @@ static MatrixProfileLite compute_profile_lite(int32_t n, const CooMatrix& coo) {
 }
 
 struct KluSymKey {
-  MatrixSigKey mk;
+  int32_t n = 0;
+  std::size_t nnz = 0;
+  std::uint64_t sig = 0;
+  std::uint64_t sig2 = 0;
   int btf = 0;
   int ordering = 0;
   bool operator==(const KluSymKey& o) const noexcept {
-    return mk == o.mk && btf == o.btf && ordering == o.ordering;
+    return n == o.n && nnz == o.nnz && sig == o.sig && sig2 == o.sig2 &&
+           btf == o.btf && ordering == o.ordering;
   }
 };
 
 struct KluSymKeyHash {
   std::size_t operator()(const KluSymKey& k) const noexcept {
-    std::uint64_t x = static_cast<std::uint64_t>(MatrixSigKeyHash{}(k.mk));
+    std::uint64_t x = k.sig;
+    x ^= static_cast<std::uint64_t>(k.n) + 0x9e3779b97f4a7c15ull + (x << 6) + (x >> 2);
+    x ^= static_cast<std::uint64_t>(k.nnz) + 0x9e3779b97f4a7c15ull + (x << 6) + (x >> 2);
+    x ^= k.sig2 + 0x9e3779b97f4a7c15ull + (x << 6) + (x >> 2);
     x ^= static_cast<std::uint64_t>(k.btf) + 0x9e3779b97f4a7c15ull + (x << 6) + (x >> 2);
     x ^= static_cast<std::uint64_t>(k.ordering) + 0x9e3779b97f4a7c15ull + (x << 6) + (x >> 2);
     return static_cast<std::size_t>(x ^ (x >> 32));
@@ -184,13 +260,6 @@ static bool cache_enabled() {
     return std::atoi(env) != 0;
   }
   return true;
-}
-
-static bool export_lu_enabled() {
-  if (const char* env = blockdaglu_getenv_compat("USERALGO_EXPORT_LU")) {
-    return std::atoi(env) != 0;
-  }
-  return false; // default: off (avoid heavy extract/convert cost in timed regions)
 }
 
 static std::size_t cache_max_entries() {
@@ -207,9 +276,11 @@ static std::unordered_map<MatrixSigKey, AutoOverride, MatrixSigKeyHash> g_auto_o
 
 static std::unordered_map<KluSymKey, std::shared_ptr<const CachedKluSymbolic>, KluSymKeyHash> g_klu_sym_cache;
 static std::deque<KluSymKey> g_klu_sym_fifo;
+static std::mutex g_cache_mutex;
 
 static std::shared_ptr<const UbftfDecomposition> cache_lookup_decomp(const MatrixSigKey& k) {
   if (!cache_enabled()) return {};
+  std::lock_guard<std::mutex> lock(g_cache_mutex);
   auto it = g_decomp_cache.find(k);
   if (it == g_decomp_cache.end()) return {};
   return it->second;
@@ -217,6 +288,7 @@ static std::shared_ptr<const UbftfDecomposition> cache_lookup_decomp(const Matri
 
 static void cache_store_decomp(const MatrixSigKey& k, std::shared_ptr<const UbftfDecomposition> v) {
   if (!cache_enabled()) return;
+  std::lock_guard<std::mutex> lock(g_cache_mutex);
   if (g_decomp_cache.find(k) == g_decomp_cache.end()) {
     g_decomp_fifo.push_back(k);
   }
@@ -230,6 +302,8 @@ static void cache_store_decomp(const MatrixSigKey& k, std::shared_ptr<const Ubft
 }
 
 static AutoOverride cache_lookup_override(const MatrixSigKey& k) {
+  if (!cache_enabled()) return AutoOverride::None;
+  std::lock_guard<std::mutex> lock(g_cache_mutex);
   auto it = g_auto_override.find(k);
   if (it == g_auto_override.end()) return AutoOverride::None;
   return it->second;
@@ -237,11 +311,13 @@ static AutoOverride cache_lookup_override(const MatrixSigKey& k) {
 
 static void cache_set_override(const MatrixSigKey& k, AutoOverride v) {
   if (!cache_enabled()) return;
+  std::lock_guard<std::mutex> lock(g_cache_mutex);
   g_auto_override[k] = v;
 }
 
 static std::shared_ptr<const CachedKluSymbolic> cache_lookup_klu_sym(const KluSymKey& k) {
   if (!cache_enabled()) return {};
+  std::lock_guard<std::mutex> lock(g_cache_mutex);
   auto it = g_klu_sym_cache.find(k);
   if (it == g_klu_sym_cache.end()) return {};
   return it->second;
@@ -249,6 +325,7 @@ static std::shared_ptr<const CachedKluSymbolic> cache_lookup_klu_sym(const KluSy
 
 static void cache_store_klu_sym(const KluSymKey& k, std::shared_ptr<const CachedKluSymbolic> v) {
   if (!cache_enabled()) return;
+  std::lock_guard<std::mutex> lock(g_cache_mutex);
   if (g_klu_sym_cache.find(k) == g_klu_sym_cache.end()) {
     g_klu_sym_fifo.push_back(k);
   }
@@ -260,21 +337,17 @@ static void cache_store_klu_sym(const KluSymKey& k, std::shared_ptr<const Cached
     g_klu_sym_cache.erase(victim);
   }
 }
-std::size_t pick_thread_count() {
-  if (const char* env = blockdaglu_getenv_compat("USERALGO_THREADS")) {
-    const int v = std::atoi(env);
-    if (v > 0) return static_cast<std::size_t>(v);
-  }
+
+static std::size_t sanitize_thread_count(std::size_t requested) {
   const unsigned hc = std::thread::hardware_concurrency();
-  const unsigned effective = hc ? hc : 8;
-  // Default: cap threads to avoid oversubscription on SMT-heavy machines.
-  return static_cast<std::size_t>(std::max(1u, std::min(effective, 4u)));
+  const std::size_t practical_max = std::max<std::size_t>(1, hc ? static_cast<std::size_t>(hc) * 2 : 16);
+  return std::max<std::size_t>(1, std::min<std::size_t>(requested, std::min<std::size_t>(64, practical_max)));
 }
 
 static std::size_t pick_env_thread_count() {
   if (const char* env = blockdaglu_getenv_compat("USERALGO_THREADS")) {
     const int v = std::atoi(env);
-    if (v > 0) return static_cast<std::size_t>(v);
+    if (v > 0) return sanitize_thread_count(static_cast<std::size_t>(v));
   }
   return 0;
 }
@@ -314,14 +387,6 @@ static std::size_t decide_block_work_threads(const UbftfDecomposition& dec, std:
 
   if (dec.nblocks > 0) t = std::min<std::size_t>(t, static_cast<std::size_t>(dec.nblocks));
   return std::max<std::size_t>(t, 1);
-}
-
-int pick_refine_iters() {
-  if (const char* env = blockdaglu_getenv_compat("USERALGO_REFINE_ITERS")) {
-    const int v = std::atoi(env);
-    if (v >= 0) return v;
-  }
-  return 0; // default: off (enable explicitly if needed)
 }
 
 int pick_klu_ordering() {
@@ -380,8 +445,13 @@ std::size_t pick_auto_block_nnz_threshold() {
   return 2000000;
 }
 
-bool auto_choose_block(int32_t n, std::size_t nnz, std::uint64_t sig) {
-  const MatrixSigKey mk{n, nnz, sig};
+bool auto_choose_block(int32_t n,
+                       std::size_t nnz,
+                       std::uint64_t sig,
+                       std::uint64_t sig2,
+                       std::uint64_t value_sig,
+                       std::uint64_t config_sig) {
+  const MatrixSigKey mk{n, nnz, sig, sig2, value_sig, config_sig};
 
   // Self-adaptive override (learned within this process, helps repeated median runs).
   switch (cache_lookup_override(mk)) {
@@ -403,9 +473,15 @@ bool auto_choose_block(int32_t n, std::size_t nnz, std::uint64_t sig) {
   return false;
 }
 
-bool auto_choose_block(int32_t n, std::size_t nnz, std::uint64_t sig, const CooMatrix& coo) {
+bool auto_choose_block(int32_t n,
+                       std::size_t nnz,
+                       std::uint64_t sig,
+                       std::uint64_t sig2,
+                       std::uint64_t value_sig,
+                       std::uint64_t config_sig,
+                       const CooMatrix& coo) {
   // First, apply the existing coarse decision rules (cheap).
-  const bool coarse = auto_choose_block(n, nnz, sig);
+  const bool coarse = auto_choose_block(n, nnz, sig, sig2, value_sig, config_sig);
   if (!coarse) return false;
 
   // Only refine the decision for large instances where a wrong choice is expensive.
@@ -427,10 +503,6 @@ bool auto_choose_block(int32_t n, std::size_t nnz, std::uint64_t sig, const CooM
     return false; // prefer global KLU
   }
   return true;
-}
-
-bool auto_choose_block(int32_t n, std::size_t nnz) {
-  return auto_choose_block(n, nnz, 0);
 }
 
 int pick_klu_btf_for(int32_t n, std::size_t nnz) {
@@ -566,6 +638,88 @@ bool csc_to_coo_with_diag1(int32_t n,
 
   return true;
 }
+
+static bool validate_and_canonicalize_matrix(CooMatrix& coo,
+                                             int32_t dimension_hint,
+                                             int32_t& n,
+                                             SolverError& error,
+                                             std::string& message) {
+  if (dimension_hint < -1) {
+    error = SolverError::InvalidDimension;
+    message = "matrix dimension must be non-negative";
+    return false;
+  }
+
+  int32_t max_index = -1;
+  for (const auto& entry : coo) {
+    const int row = std::get<0>(entry);
+    const int col = std::get<1>(entry);
+    const double value = std::get<2>(entry);
+    if (row < 0 || col < 0) {
+      error = SolverError::InvalidIndex;
+      message = "matrix contains a negative row or column index";
+      return false;
+    }
+    if (!std::isfinite(value)) {
+      error = SolverError::NonFiniteValue;
+      message = "matrix contains NaN or infinity";
+      return false;
+    }
+    if (dimension_hint >= 0 && (row >= dimension_hint || col >= dimension_hint)) {
+      error = SolverError::InvalidIndex;
+      message = "matrix entry lies outside the declared dimension";
+      return false;
+    }
+    max_index = std::max<int32_t>(max_index, std::max<int32_t>(row, col));
+  }
+
+  if (dimension_hint >= 0) {
+    n = dimension_hint;
+  } else {
+    if (max_index == std::numeric_limits<int32_t>::max()) {
+      error = SolverError::InvalidDimension;
+      message = "inferred matrix dimension overflows int32";
+      return false;
+    }
+    n = max_index + 1;
+  }
+  if (n <= 0) {
+    error = SolverError::InvalidDimension;
+    message = "matrix dimension must be positive";
+    return false;
+  }
+
+  std::sort(coo.begin(), coo.end(), [](const auto& a, const auto& b) {
+    if (std::get<0>(a) != std::get<0>(b)) return std::get<0>(a) < std::get<0>(b);
+    return std::get<1>(a) < std::get<1>(b);
+  });
+
+  CooMatrix canonical;
+  canonical.reserve(coo.size());
+  for (std::size_t i = 0; i < coo.size();) {
+    const int row = std::get<0>(coo[i]);
+    const int col = std::get<1>(coo[i]);
+    long double sum = 0.0L;
+    std::size_t j = i;
+    while (j < coo.size() && std::get<0>(coo[j]) == row && std::get<1>(coo[j]) == col) {
+      sum += static_cast<long double>(std::get<2>(coo[j]));
+      ++j;
+    }
+    const double value = static_cast<double>(sum);
+    if (!std::isfinite(value)) {
+      error = SolverError::NonFiniteValue;
+      message = "combining duplicate matrix entries overflowed";
+      return false;
+    }
+    if (value != 0.0) canonical.emplace_back(row, col, value);
+    i = j;
+  }
+
+  coo = std::move(canonical);
+  error = SolverError::None;
+  message.clear();
+  return true;
+}
 }  // namespace
 
 Solver::Solver() = default;
@@ -573,50 +727,62 @@ Solver::~Solver() {
   if (factors_) {
     free_factors(*factors_);
   }
-  if (global_) {
-    if (global_->num) {
-      KluDynamic::instance().free_numeric(&global_->num, &global_->common);
-      global_->num = nullptr;
-    }
-    // If symbolic came from cache, its lifetime is owned by global_->sym_cache.
-    if (global_->sym && !global_->sym_cache) {
-      KluDynamic::instance().free_symbolic(&global_->sym, &global_->common);
-      global_->sym = nullptr;
-    }
-  }
+  if (global_) release_global_klu_state(*global_);
+  if (export_global_) release_global_klu_state(*export_global_);
+}
+
+void Solver::clear_error() {
+  last_error_ = SolverError::None;
+  last_error_message_.clear();
+}
+
+bool Solver::fail(SolverError error, std::string message) {
+  last_error_ = error;
+  last_error_message_ = std::move(message);
+  return false;
 }
 
 bool Solver::set_matrix(CooMatrix m) {
+  return set_matrix(std::move(m), -1);
+}
+
+bool Solver::set_matrix(CooMatrix m, int32_t dimension) {
+  clear_error();
+  if (dimension < -1) {
+    return fail(SolverError::InvalidDimension, "matrix dimension must be non-negative");
+  }
   // Release previous case resources (important when the harness reuses the same instance).
   if (factors_) {
     free_factors(*factors_);
     factors_.reset();
   }
   if (global_) {
-    if (global_->num) {
-      KluDynamic::instance().free_numeric(&global_->num, &global_->common);
-      global_->num = nullptr;
-    }
-    if (global_->sym && !global_->sym_cache) {
-      KluDynamic::instance().free_symbolic(&global_->sym, &global_->common);
-      global_->sym = nullptr;
-    }
+    release_global_klu_state(*global_);
     global_.reset();
+  }
+  if (export_global_) {
+    release_global_klu_state(*export_global_);
+    export_global_.reset();
   }
 
   original_matrix_ = std::move(m);
+  dimension_hint_ = dimension;
 
   // Final submission compliance note:
   // prepareData() must not perform any matrix element analysis / reordering / symbolic work.
   // We only store the COO input and reset state here. Any scan/analysis (dimension inference,
   // signatures, diag stats, CSC build, analyze/factor/solve) is deferred to timed stages.
-  n_ = -1;         // inferred lazily in rearrangeMatrix()
+  n_ = (dimension >= 0) ? dimension : -1; // validated or inferred lazily in rearrangeMatrix()
   matrix_sig_ = 0; // computed lazily in rearrangeMatrix()
+  matrix_sig2_ = 0;
+  matrix_value_sig_ = 0;
+  cache_config_sig_ = 0;
   rcond_global_ = -1.0;
   rcond_blocks_min_ = -1.0;
   diag_stats_valid_ = false;
   diag_stats_ = DiagStats{};
   prepared_ = true;
+  matrix_validated_ = false;
   decomposed_ = false;
   factored_ = false;
   factors_extracted_ = false;
@@ -634,18 +800,23 @@ bool Solver::set_matrix(CooMatrix m) {
 }
 
 bool Solver::analyze() {
-  if (!prepared_) return false;
+  clear_error();
+  if (!prepared_) return fail(SolverError::NotPrepared, "set_matrix must be called before analyze");
 
   // Per organizer rules, any scan/analysis of the input matrix must be done inside timed stages.
-  // Infer dimension and compute a light-weight signature here (used for caching and AUTO heuristics).
-  if (n_ < 0) {
-    int n = -1;
-    for (const auto& t : original_matrix_) {
-      n = std::max(n, std::max(std::get<0>(t), std::get<1>(t)));
+  // Validate and canonicalize here so prepareData() remains a storage-only stage.
+  if (!matrix_validated_) {
+    SolverError validation_error = SolverError::None;
+    std::string validation_message;
+    if (!validate_and_canonicalize_matrix(
+          original_matrix_, dimension_hint_, n_, validation_error, validation_message)) {
+      return fail(validation_error, std::move(validation_message));
     }
-    n_ = (n >= 0) ? (n + 1) : 0;
+    matrix_validated_ = true;
   }
   matrix_sig_ = compute_matrix_sig(n_, original_matrix_);
+  matrix_sig2_ = compute_matrix_sig2(n_, original_matrix_);
+  matrix_value_sig_ = compute_matrix_value_sig(original_matrix_);
 
   // Mode selection (AUTO by default).
   // Use USERALGO_MODE=klu to force the global-KLU path; USERALGO_MODE=block to force UBTF/block.
@@ -675,9 +846,16 @@ bool Solver::analyze() {
   build_threads_ = pick_env_thread_count();
   if (build_threads_ == 0) build_threads_ = default_build_threads();
   work_threads_ = 0;
+  cache_config_sig_ = compute_cache_config_sig(build_threads_);
 
   if (mode_ == Mode::Auto) {
-    const bool choose_block = auto_choose_block(n_, original_matrix_.size(), matrix_sig_, original_matrix_);
+    const bool choose_block = auto_choose_block(n_,
+                                                original_matrix_.size(),
+                                                matrix_sig_,
+                                                matrix_sig2_,
+                                                matrix_value_sig_,
+                                                cache_config_sig_,
+                                                original_matrix_);
     use_global_klu_ = !choose_block;
   }
 
@@ -721,10 +899,14 @@ bool Solver::analyze() {
       }
     };
 
-    if (!ensure_global()) return false;
+    if (!ensure_global()) {
+      return fail(SolverError::AnalysisFailed, "failed to allocate global KLU analysis state");
+    }
     try {
       auto& klu = KluDynamic::instance();
-      if (!global_ || !klu.defaults(&global_->common)) return false;
+      if (!global_ || !klu.defaults(&global_->common)) {
+        return fail(SolverError::BackendUnavailable, "klu_defaults failed");
+      }
       const int btf = pick_klu_btf_for(n_, original_matrix_.size());
       global_->common.btf = btf;
       global_->common.ordering = pick_klu_ordering();
@@ -735,8 +917,8 @@ bool Solver::analyze() {
       // Cache KLU symbolic analysis (often dominates Rearr time on large cases).
       global_->sym_cache.reset();
       global_->sym = nullptr;
-      const MatrixSigKey mk{n_, original_matrix_.size(), matrix_sig_};
-      const KluSymKey sk{mk, global_->common.btf, global_->common.ordering};
+      const KluSymKey sk{n_, original_matrix_.size(), matrix_sig_, matrix_sig2_,
+                        global_->common.btf, global_->common.ordering};
       global_->sym_cache = cache_lookup_klu_sym(sk);
       if (global_->sym_cache) {
         global_->sym = global_->sym_cache->sym;
@@ -752,7 +934,7 @@ bool Solver::analyze() {
           const auto t_an1 = std::chrono::high_resolution_clock::now();
           analyze_ms = std::chrono::duration<double, std::milli>(t_an1 - t_an0).count();
         }
-        if (!sym) return false;
+        if (!sym) return fail(SolverError::AnalysisFailed, "global KLU symbolic analysis failed");
         auto cached_sym = std::make_shared<CachedKluSymbolic>();
         cached_sym->sym = sym;
         cached_sym->common = global_->common;
@@ -774,8 +956,10 @@ bool Solver::analyze() {
                   << ",ms=" << analyze_ms
                   << "\n";
       }
+    } catch (const std::exception& e) {
+      return fail(SolverError::BackendUnavailable, e.what());
     } catch (...) {
-      return false;
+      return fail(SolverError::AnalysisFailed, "global KLU analysis raised an unknown error");
     }
 
     // Mark rearranged: this path uses KLU internal permutations; we don't expose the permuted A here.
@@ -787,7 +971,8 @@ bool Solver::analyze() {
   try {
     const std::size_t build_threads = std::max<std::size_t>(1, build_threads_);
     const int32_t target_blocks = std::max<int32_t>(1, std::min<int32_t>(n_, static_cast<int32_t>(build_threads * 4)));
-    const MatrixSigKey mk{n_, original_matrix_.size(), matrix_sig_};
+    const MatrixSigKey mk{n_, original_matrix_.size(), matrix_sig_, matrix_sig2_,
+                          matrix_value_sig_, cache_config_sig_};
     decomposition_ = cache_lookup_decomp(mk);
     if (!decomposition_) {
       const auto t0 = profile_enabled() ? std::chrono::high_resolution_clock::now()
@@ -838,7 +1023,7 @@ bool Solver::analyze() {
                 << ",ms=" << block_build_ms
                 << "\n";
     }
-  } catch (...) {
+  } catch (const std::exception& block_error) {
     // Auto mode: if block path fails (e.g., missing btf.dll), fall back to global KLU.
     if (mode_ == Mode::Auto) {
       use_global_klu_ = true;
@@ -848,7 +1033,9 @@ bool Solver::analyze() {
           global_->A = coo_to_csc_i32(original_matrix_, n_);
         }
         auto& klu = KluDynamic::instance();
-        if (!klu.defaults(&global_->common)) return false;
+        if (!klu.defaults(&global_->common)) {
+          return fail(SolverError::BackendUnavailable, "klu_defaults failed during analysis fallback");
+        }
         const int btf = pick_klu_btf_for(n_, original_matrix_.size());
         global_->common.btf = btf;
         global_->common.ordering = pick_klu_ordering();
@@ -858,15 +1045,15 @@ bool Solver::analyze() {
         // Reuse cached symbolic if possible.
         global_->sym_cache.reset();
         global_->sym = nullptr;
-        const MatrixSigKey mk{n_, original_matrix_.size(), matrix_sig_};
-        const KluSymKey sk{mk, global_->common.btf, global_->common.ordering};
+        const KluSymKey sk{n_, original_matrix_.size(), matrix_sig_, matrix_sig2_,
+                          global_->common.btf, global_->common.ordering};
         global_->sym_cache = cache_lookup_klu_sym(sk);
         if (global_->sym_cache) {
           global_->sym = global_->sym_cache->sym;
         }
         if (!global_->sym) {
           klu_symbolic* sym = klu.analyze(n_, global_->A.col_ptr.data(), global_->A.row_ind.data(), &global_->common);
-          if (!sym) return false;
+          if (!sym) return fail(SolverError::AnalysisFailed, "global KLU analysis fallback failed");
           auto cached_sym = std::make_shared<CachedKluSymbolic>();
           cached_sym->sym = sym;
           cached_sym->common = global_->common;
@@ -876,11 +1063,15 @@ bool Solver::analyze() {
         }
         decomposed_ = true;
         return true;
+      } catch (const std::exception& e) {
+        return fail(SolverError::BackendUnavailable, e.what());
       } catch (...) {
-        return false;
+        return fail(SolverError::AnalysisFailed, "analysis fallback raised an unknown error");
       }
     }
-    return false;
+    return fail(SolverError::AnalysisFailed, block_error.what());
+  } catch (...) {
+    return fail(SolverError::AnalysisFailed, "block analysis raised an unknown error");
   }
 
   // If BTF matching is incomplete, the block solve path may become singular/unstable (dense micro-kernel requires pivots).
@@ -903,7 +1094,9 @@ bool Solver::analyze() {
         global_->A = coo_to_csc_i32(original_matrix_, n_);
       }
       auto& klu = KluDynamic::instance();
-      if (!klu.defaults(&global_->common)) return false;
+      if (!klu.defaults(&global_->common)) {
+        return fail(SolverError::BackendUnavailable, "klu_defaults failed after incomplete BTF match");
+      }
       const int btf = pick_klu_btf_for(n_, original_matrix_.size());
       global_->common.btf = btf;
       global_->common.ordering = pick_klu_ordering();
@@ -912,15 +1105,15 @@ bool Solver::analyze() {
       if (tol >= 0.0) global_->common.tol = tol;
       global_->sym_cache.reset();
       global_->sym = nullptr;
-      const MatrixSigKey mk{n_, original_matrix_.size(), matrix_sig_};
-      const KluSymKey sk{mk, global_->common.btf, global_->common.ordering};
+      const KluSymKey sk{n_, original_matrix_.size(), matrix_sig_, matrix_sig2_,
+                        global_->common.btf, global_->common.ordering};
       global_->sym_cache = cache_lookup_klu_sym(sk);
       if (global_->sym_cache) {
         global_->sym = global_->sym_cache->sym;
       }
       if (!global_->sym) {
         klu_symbolic* sym = klu.analyze(n_, global_->A.col_ptr.data(), global_->A.row_ind.data(), &global_->common);
-        if (!sym) return false;
+        if (!sym) return fail(SolverError::AnalysisFailed, "global KLU analysis failed after incomplete BTF match");
         auto cached_sym = std::make_shared<CachedKluSymbolic>();
         cached_sym->sym = sym;
         cached_sym->common = global_->common;
@@ -930,8 +1123,10 @@ bool Solver::analyze() {
       }
       decomposed_ = true;
       return true;
+    } catch (const std::exception& e) {
+      return fail(SolverError::BackendUnavailable, e.what());
     } catch (...) {
-      return false;
+      return fail(SolverError::AnalysisFailed, "incomplete-match fallback raised an unknown error");
     }
   }
 
@@ -944,7 +1139,8 @@ bool Solver::analyze() {
     }
     const double ratio = (n_ > 0) ? (static_cast<double>(max_sz) / static_cast<double>(n_)) : 0.0;
     if (ratio > 0.80) {
-      const MatrixSigKey mk{n_, original_matrix_.size(), matrix_sig_};
+      const MatrixSigKey mk{n_, original_matrix_.size(), matrix_sig_, matrix_sig2_,
+                            matrix_value_sig_, cache_config_sig_};
       cache_set_override(mk, AutoOverride::PreferKlu);
       if (profile_enabled()) {
         std::cerr << "USERALGO_PROFILE,auto_override_set"
@@ -986,10 +1182,15 @@ bool Solver::analyze() {
 }
 
 bool Solver::factor() {
-  if (!decomposed_) return false;
+  clear_error();
+  if (!decomposed_) {
+    return fail(SolverError::NotPrepared, "analyze must succeed before factor");
+  }
 
   if (use_global_klu_) {
-    if (!global_ || !global_->sym) return false;
+    if (!global_ || !global_->sym) {
+      return fail(SolverError::AnalysisFailed, "global KLU symbolic analysis is unavailable");
+    }
     if (global_->num) {
       KluDynamic::instance().free_numeric(&global_->num, &global_->common);
       global_->num = nullptr;
@@ -1022,7 +1223,9 @@ bool Solver::factor() {
                   << ",ms=" << ms
                   << "\n";
       }
-      if (!global_->num) return false;
+      if (!global_->num) {
+        return fail(SolverError::FactorizationFailed, "global KLU numeric factorization failed");
+      }
       factored_ = true;
       factors_extracted_ = false;
       L_.clear();
@@ -1031,8 +1234,10 @@ bool Solver::factor() {
       P_perm_.clear();
       Q_perm_.clear();
       return true;
+    } catch (const std::exception& e) {
+      return fail(SolverError::BackendUnavailable, e.what());
     } catch (...) {
-      return false;
+      return fail(SolverError::FactorizationFailed, "global KLU factorization raised an unknown error");
     }
   }
 
@@ -1045,8 +1250,70 @@ bool Solver::factor() {
   UbftfFactors fac;
   try {
     fac = factor_blocks_parallel(*decomposition_, threads);
+  } catch (const std::exception& e) {
+    return fail(SolverError::FactorizationFailed, e.what());
   } catch (...) {
-    return false;
+    return fail(SolverError::FactorizationFailed, "block factorization raised an unknown error");
+  }
+
+  const auto bad_blocks = static_cast<std::size_t>(std::count_if(
+    fac.blocks.begin(), fac.blocks.end(), [](const auto& block) { return !block.ok; }));
+  if (bad_blocks != 0) {
+    free_factors(fac);
+    if (mode_ != Mode::Auto) {
+      std::ostringstream message;
+      message << "block factorization failed for " << bad_blocks << " diagonal block(s)";
+      return fail(SolverError::FactorizationFailed, message.str());
+    }
+
+    // AUTO must remain robust: retry the same canonical matrix with a global KLU factorization.
+    try {
+      global_ = std::make_unique<GlobalKluState>();
+      global_->A = coo_to_csc_i32(original_matrix_, n_);
+      auto& klu = KluDynamic::instance();
+      if (!klu.defaults(&global_->common)) {
+        return fail(SolverError::BackendUnavailable, "klu_defaults failed during AUTO fallback");
+      }
+      const int btf = pick_klu_btf_for(n_, original_matrix_.size());
+      global_->common.btf = btf;
+      global_->common.ordering = pick_klu_ordering();
+      global_->common.scale = pick_klu_scale_for(n_, original_matrix_.size(), btf);
+      const double tol = pick_klu_tol_for(n_, original_matrix_.size(), btf);
+      if (tol >= 0.0) global_->common.tol = tol;
+
+      global_->sym = klu.analyze(n_,
+                                 global_->A.col_ptr.data(),
+                                 global_->A.row_ind.data(),
+                                 &global_->common);
+      if (!global_->sym) {
+        return fail(SolverError::AnalysisFailed, "global KLU analysis failed during AUTO fallback");
+      }
+      global_->num = klu.factor(global_->A.col_ptr.data(),
+                                global_->A.row_ind.data(),
+                                global_->A.values.data(),
+                                global_->sym,
+                                &global_->common);
+      if (!global_->num) {
+        return fail(SolverError::FactorizationFailed, "global KLU factorization failed during AUTO fallback");
+      }
+      rcond_global_ = global_->common.rcond;
+      use_global_klu_ = true;
+      work_threads_ = 1;
+      decomposition_.reset();
+      factors_.reset();
+      factored_ = true;
+      factors_extracted_ = false;
+      L_.clear();
+      U_.clear();
+      Rs_.clear();
+      P_perm_.clear();
+      Q_perm_.clear();
+      return true;
+    } catch (const std::exception& e) {
+      return fail(SolverError::BackendUnavailable, e.what());
+    } catch (...) {
+      return fail(SolverError::FactorizationFailed, "AUTO fallback raised an unknown error");
+    }
   }
 
   factors_ = std::make_unique<UbftfFactors>(std::move(fac));
@@ -1083,19 +1350,18 @@ bool Solver::factor() {
 }
 
 bool Solver::solve_in_place(std::vector<double>& b) {
-  if (!factored_) return false;
+  clear_error();
+  if (!factored_) return fail(SolverError::NotPrepared, "factor must succeed before solve");
   const std::size_t threads = std::max<std::size_t>(1, work_threads_ ? work_threads_ : build_threads_);
 
-  // Defensive: in normal harness flow, n_ is inferred in rearrangeMatrix().
-  if (n_ < 0) {
-    int n = -1;
-    for (const auto& t : original_matrix_) {
-      n = std::max(n, std::max(std::get<0>(t), std::get<1>(t)));
-    }
-    n_ = (n >= 0) ? (n + 1) : 0;
+  if (static_cast<int32_t>(b.size()) != n_) {
+    return fail(SolverError::InvalidRightHandSide, "right-hand side size does not match matrix dimension");
   }
-
-  if (static_cast<int32_t>(b.size()) != n_) return false;
+  for (double value : b) {
+    if (!std::isfinite(value)) {
+      return fail(SolverError::NonFiniteValue, "right-hand side contains NaN or infinity");
+    }
+  }
 
   // Optional diagonal-based conditioning diagnostics (only when explicitly requested).
   // Must be computed inside timed stages (solve), not in prepareData().
@@ -1204,14 +1470,16 @@ bool Solver::solve_in_place(std::vector<double>& b) {
 
   // First solve.
   if (use_global_klu_) {
-    if (!global_ || !global_->sym || !global_->num) return false;
+    if (!global_ || !global_->sym || !global_->num) {
+      return fail(SolverError::FactorizationFailed, "global KLU factors are unavailable");
+    }
     // KLU overwrites b with x.
     if (!KluDynamic::instance().solve(global_->sym, global_->num, n_, 1, b.data(), &global_->common)) {
-      return false;
+      return fail(SolverError::SolveFailed, "global KLU solve failed");
     }
   } else {
     if (!solve_ubtf(*decomposition_, *factors_, b, threads)) {
-      return false;
+      return fail(SolverError::SolveFailed, "block solve failed");
     }
   }
 
@@ -1231,6 +1499,9 @@ bool Solver::solve_in_place(std::vector<double>& b) {
     for (const auto& t : original_matrix_) {
       const int32_t row = static_cast<int32_t>(std::get<0>(t));
       const int32_t col = static_cast<int32_t>(std::get<1>(t));
+      if (row < 0 || col < 0 || row >= n_ || col >= n_) {
+        return fail(SolverError::InvalidIndex, "validated matrix contains an out-of-range entry");
+      }
       r[row] -= std::get<2>(t) * b[col];
     }
 
@@ -1252,11 +1523,11 @@ bool Solver::solve_in_place(std::vector<double>& b) {
     // Solve A*delta = r, then x += delta.
     if (use_global_klu_) {
       if (!KluDynamic::instance().solve(global_->sym, global_->num, n_, 1, r.data(), &global_->common)) {
-        return false;
+        return fail(SolverError::SolveFailed, "global KLU refinement solve failed");
       }
     } else {
       if (!solve_ubtf(*decomposition_, *factors_, r, threads)) {
-        return false;
+        return fail(SolverError::SolveFailed, "block refinement solve failed");
       }
     }
     for (int32_t i = 0; i < n_; ++i) {
@@ -1324,296 +1595,133 @@ static bool extract_global_factors(GlobalKluState& g,
   return true;
 }
 
-static bool extract_blockdiag_lu_for_visualization(const UbftfDecomposition& dec,
-                                                  const UbftfFactors& fac,
-                                                  int32_t n,
-                                                  CooMatrix& L,
-                                                  CooMatrix& U) {
-  (void)dec;
-  if (n <= 0) return false;
-
-  // Hard cap to avoid OOM on huge strongly-coupled blocks. For such blocks, fall back to a
-  // diagonal-only placeholder (still non-empty to satisfy "exported" expectations).
-  constexpr int32_t kMaxExtractBlockN = 20000;
-  constexpr std::size_t kMaxExtractEntries = 20'000'000; // lnz+unz guard per block
-
-  std::size_t l_est = 0;
-  std::size_t u_est = 0;
-  for (const auto& bf : fac.blocks) {
-    if (!bf.ok) continue;
-    if (bf.sym && bf.num) {
-      const std::size_t lnz = static_cast<std::size_t>(std::max<int32_t>(0, bf.num->lnz));
-      const std::size_t unz = static_cast<std::size_t>(std::max<int32_t>(0, bf.num->unz));
-      if (bf.size > 0 && bf.size <= kMaxExtractBlockN && (lnz + unz) <= kMaxExtractEntries) {
-        l_est += lnz + static_cast<std::size_t>(bf.size);
-        u_est += unz;
-        continue;
-      }
+bool Solver::ensure_export_factors() {
+  if (factors_extracted_ && export_global_ && export_global_->sym && export_global_->num) {
+    return true;
+  }
+  if (!prepared_) {
+    return fail(SolverError::NotPrepared, "set_matrix must be called before exporting factors");
+  }
+  if (!matrix_validated_) {
+    SolverError validation_error = SolverError::None;
+    std::string validation_message;
+    if (!validate_and_canonicalize_matrix(
+          original_matrix_, dimension_hint_, n_, validation_error, validation_message)) {
+      return fail(validation_error, std::move(validation_message));
     }
-    // Placeholder: diagonal-only.
-    if (bf.size > 0) {
-      l_est += static_cast<std::size_t>(bf.size);
-      u_est += static_cast<std::size_t>(bf.size);
-    }
+    matrix_validated_ = true;
+    matrix_sig_ = compute_matrix_sig(n_, original_matrix_);
+    matrix_sig2_ = compute_matrix_sig2(n_, original_matrix_);
+    matrix_value_sig_ = compute_matrix_value_sig(original_matrix_);
   }
 
-  L.clear();
-  U.clear();
-  L.reserve(l_est);
-  U.reserve(u_est);
-
-  auto& klu = KluDynamic::instance();
-
-  for (const auto& bf : fac.blocks) {
-    if (!bf.ok || bf.size <= 0) continue;
-    const int32_t start = bf.start;
-    const int32_t sz = bf.size;
-
-    const bool can_extract =
-      (bf.sym && bf.num && sz <= kMaxExtractBlockN &&
-       (static_cast<std::size_t>(std::max<int32_t>(0, bf.num->lnz)) +
-        static_cast<std::size_t>(std::max<int32_t>(0, bf.num->unz))) <= kMaxExtractEntries);
-
-    if (!can_extract) {
-      // Safe fallback: export only diagonal structure.
-      for (int32_t i = 0; i < sz; ++i) {
-        L.emplace_back(start + i, start + i, 1.0);
-        U.emplace_back(start + i, start + i, 1.0);
-      }
-      continue;
+  try {
+    if (export_global_) {
+      release_global_klu_state(*export_global_);
+      export_global_.reset();
     }
-
-    const int32_t lnz = bf.num->lnz;
-    const int32_t unz = bf.num->unz;
-    const int32_t nzoff = bf.num->nzoff;
-    const int32_t nblocks = bf.sym->nblocks;
-
-    std::vector<int32_t> Lp(static_cast<std::size_t>(sz) + 1, 0);
-    std::vector<int32_t> Li(static_cast<std::size_t>(std::max<int32_t>(0, lnz)), 0);
-    std::vector<double> Lx(static_cast<std::size_t>(std::max<int32_t>(0, lnz)), 0.0);
-
-    std::vector<int32_t> Up(static_cast<std::size_t>(sz) + 1, 0);
-    std::vector<int32_t> Ui(static_cast<std::size_t>(std::max<int32_t>(0, unz)), 0);
-    std::vector<double> Ux(static_cast<std::size_t>(std::max<int32_t>(0, unz)), 0.0);
-
-    std::vector<int32_t> Fp(static_cast<std::size_t>(sz) + 1, 0);
-    std::vector<int32_t> Fi(static_cast<std::size_t>(std::max<int32_t>(0, nzoff)), 0);
-    std::vector<double> Fx(static_cast<std::size_t>(std::max<int32_t>(0, nzoff)), 0.0);
-
-    std::vector<int32_t> P(static_cast<std::size_t>(sz), 0);
-    std::vector<int32_t> Q(static_cast<std::size_t>(sz), 0);
-    std::vector<double> Rs(static_cast<std::size_t>(sz), 1.0);
-    std::vector<int32_t> R(static_cast<std::size_t>(std::max<int32_t>(0, nblocks)) + 1, 0);
-
-    klu_common common = bf.common; // KLU may update stats; keep local copy
-    const int ok = klu.extract(bf.num,
-                              bf.sym,
-                              Lp.data(),
-                              Li.data(),
-                              Lx.data(),
-                              Up.data(),
-                              Ui.data(),
-                              Ux.data(),
-                              Fp.data(),
-                              Fi.data(),
-                              Fx.data(),
-                              P.data(),
-                              Q.data(),
-                              Rs.data(),
-                              R.data(),
-                              &common);
-    if (!ok) {
-      for (int32_t i = 0; i < sz; ++i) {
-        L.emplace_back(start + i, start + i, 1.0);
-        U.emplace_back(start + i, start + i, 1.0);
-      }
-      continue;
+    export_global_ = std::make_unique<GlobalKluState>();
+    export_global_->A = coo_to_csc_i32(original_matrix_, n_);
+    auto& klu = KluDynamic::instance();
+    if (!klu.defaults(&export_global_->common)) {
+      return fail(SolverError::BackendUnavailable, "klu_defaults failed for compatibility export");
     }
+    // The compatibility API exposes only L and U, not KLU's separate BTF
+    // off-diagonal matrix F. Disable BTF here so rearranged == L * U.
+    const int btf = 0;
+    export_global_->common.btf = btf;
+    export_global_->common.ordering = pick_klu_ordering();
+    export_global_->common.scale = pick_klu_scale_for(n_, original_matrix_.size(), btf);
+    const double tol = pick_klu_tol_for(n_, original_matrix_.size(), btf);
+    if (tol >= 0.0) export_global_->common.tol = tol;
 
-    CooMatrix Lloc, Uloc;
-    if (!csc_to_coo_with_diag1(sz, Lp, Li, Lx, Lloc, true)) return false;
-    if (!csc_to_coo_with_diag1(sz, Up, Ui, Ux, Uloc, false)) return false;
-
-    for (const auto& t : Lloc) {
-      L.emplace_back(start + std::get<0>(t), start + std::get<1>(t), std::get<2>(t));
+    export_global_->sym = klu.analyze(n_,
+                                      export_global_->A.col_ptr.data(),
+                                      export_global_->A.row_ind.data(),
+                                      &export_global_->common);
+    if (!export_global_->sym) {
+      return fail(SolverError::ExportFailed, "KLU symbolic analysis failed for compatibility export");
     }
-    for (const auto& t : Uloc) {
-      U.emplace_back(start + std::get<0>(t), start + std::get<1>(t), std::get<2>(t));
+    export_global_->num = klu.factor(export_global_->A.col_ptr.data(),
+                                     export_global_->A.row_ind.data(),
+                                     export_global_->A.values.data(),
+                                     export_global_->sym,
+                                     &export_global_->common);
+    if (!export_global_->num) {
+      return fail(SolverError::ExportFailed, "KLU numeric factorization failed for compatibility export");
     }
+    if (!extract_global_factors(*export_global_, n_, L_, U_, Rs_, P_perm_, Q_perm_)) {
+      return fail(SolverError::ExportFailed, "KLU factor extraction failed for compatibility export");
+    }
+    factors_extracted_ = true;
+    return true;
+  } catch (const std::exception& e) {
+    return fail(SolverError::BackendUnavailable, e.what());
+  } catch (...) {
+    return fail(SolverError::ExportFailed, "compatibility factor export raised an unknown error");
   }
-
-  // Sanity: avoid exporting empty matrices for visualization mode.
-  return !L.empty() && !U.empty();
 }
 
 blockdaglu::CooMatrix Solver::get_rearranged_matrix() {
-  if (!prepared_) return CooMatrix();
+  clear_error();
+  if (!ensure_export_factors()) return CooMatrix();
 
-  if (use_global_klu_) {
-    if (!global_ || !global_->sym) return CooMatrix();
-
-    const int32_t n = static_cast<int32_t>(n_);
-    std::vector<int32_t> Pinv(static_cast<std::size_t>(n), 0);
-    std::vector<int32_t> Qinv(static_cast<std::size_t>(n), 0);
-
-    const int32_t* P = nullptr;
-    const int32_t* Q = nullptr;
-    if (factors_extracted_ && P_perm_.size() == static_cast<std::size_t>(n) && Q_perm_.size() == static_cast<std::size_t>(n)) {
-      P = P_perm_.data();
-      Q = Q_perm_.data();
-    } else {
-      P = global_->sym->P;
-      Q = global_->sym->Q;
-    }
-
-    for (int32_t i = 0; i < n; ++i) {
-      Pinv[static_cast<std::size_t>(P[i])] = i;
-      Qinv[static_cast<std::size_t>(Q[i])] = i;
-    }
-
-    CooMatrix out;
-    out.reserve(original_matrix_.size());
-    for (const auto& t : original_matrix_) {
-      const int32_t r_old = static_cast<int32_t>(std::get<0>(t));
-      const int32_t c_old = static_cast<int32_t>(std::get<1>(t));
-      if (r_old < 0 || c_old < 0 || r_old >= n || c_old >= n) continue;
-      const int32_t r_new = Pinv[static_cast<std::size_t>(r_old)];
-      const int32_t c_new = Qinv[static_cast<std::size_t>(c_old)];
-      double v = std::get<2>(t);
-      if (factors_extracted_ && Rs_.size() == static_cast<std::size_t>(n)) {
-        v *= Rs_[static_cast<std::size_t>(r_new)];
-      }
-      out.emplace_back(r_new, c_new, v);
-    }
-    return out;
+  std::vector<int32_t> pinv(static_cast<std::size_t>(n_), 0);
+  std::vector<int32_t> qinv(static_cast<std::size_t>(n_), 0);
+  for (int32_t i = 0; i < n_; ++i) {
+    pinv[static_cast<std::size_t>(P_perm_[static_cast<std::size_t>(i)])] = i;
+    qinv[static_cast<std::size_t>(Q_perm_[static_cast<std::size_t>(i)])] = i;
   }
-
-  if (!decomposition_) return CooMatrix();
-
-  // Reconstruct full permuted matrix on demand.
-  // Note: internal CSR stores only inter-block upper entries by default; diagonal blocks are stored separately.
-  // If CSR is forced to contain diagonal blocks too (AB experiments), avoid duplicates by using CSR only.
-  if (decomposition_->csr_contains_diag) {
-    CooMatrix out;
-    out.reserve(static_cast<std::size_t>(std::max<int32_t>(0, decomposition_->Aperm_csr.nnz)));
-    for (int32_t r = 0; r < decomposition_->n; ++r) {
-      for (int32_t p = decomposition_->Aperm_csr.row_ptr[r]; p < decomposition_->Aperm_csr.row_ptr[r + 1]; ++p) {
-        out.emplace_back(r, decomposition_->Aperm_csr.col_ind[p], decomposition_->Aperm_csr.values[p]);
-      }
-    }
-    return out;
-  }
-
-  std::size_t diag_nnz = 0;
-  for (const auto& b : decomposition_->diag_blocks_coo) diag_nnz += b.size();
 
   CooMatrix out;
-  out.reserve(diag_nnz + static_cast<std::size_t>(std::max<int32_t>(0, decomposition_->Aperm_csr.nnz)));
-
-  for (int32_t bid = 0; bid < decomposition_->nblocks; ++bid) {
-    const int32_t start = decomposition_->R[bid];
-    for (const auto& t : decomposition_->diag_blocks_coo[bid]) {
-      out.emplace_back(start + std::get<0>(t), start + std::get<1>(t), std::get<2>(t));
+  out.reserve(original_matrix_.size());
+  for (const auto& entry : original_matrix_) {
+    const int32_t old_row = std::get<0>(entry);
+    const int32_t old_col = std::get<1>(entry);
+    const int32_t new_row = pinv[static_cast<std::size_t>(old_row)];
+    const int32_t new_col = qinv[static_cast<std::size_t>(old_col)];
+    double value = std::get<2>(entry);
+    if (Rs_.size() == static_cast<std::size_t>(n_)) {
+      const double row_scale = Rs_[static_cast<std::size_t>(new_row)];
+      if (row_scale != 0.0) value /= row_scale;
     }
+    out.emplace_back(new_row, new_col, value);
   }
-
-  for (int32_t r = 0; r < decomposition_->n; ++r) {
-    for (int32_t p = decomposition_->Aperm_csr.row_ptr[r]; p < decomposition_->Aperm_csr.row_ptr[r + 1]; ++p) {
-      out.emplace_back(r, decomposition_->Aperm_csr.col_ind[p], decomposition_->Aperm_csr.values[p]);
-    }
-  }
-
   return out;
 }
 
 blockdaglu::CooMatrix Solver::getQ() {
+  clear_error();
+  if (!ensure_export_factors()) return CooMatrix();
   CooMatrix out;
   out.reserve(static_cast<std::size_t>(n_));
-  // Q matrix such that A_perm = A * Qmat, where column i of A_perm is column Q[i] of A.
-  // Thus Qmat has 1 at (Q[i], i).
-  if (!prepared_) return CooMatrix();
-
-  if (use_global_klu_) {
-    if (!global_ || !global_->sym) return CooMatrix();
-    const int32_t* Q = (factors_extracted_ && Q_perm_.size() == static_cast<std::size_t>(n_)) ? Q_perm_.data() : global_->sym->Q;
-    for (int32_t i = 0; i < n_; ++i) {
-      out.emplace_back(Q[i], i, 1.0);
-    }
-    return out;
-  }
-
-  if (!decomposition_) return CooMatrix();
   for (int32_t i = 0; i < n_; ++i) {
-    out.emplace_back(decomposition_->Q[i], i, 1.0);
+    out.emplace_back(Q_perm_[static_cast<std::size_t>(i)], i, 1.0);
   }
   return out;
 }
 
 blockdaglu::CooMatrix Solver::getP() {
+  clear_error();
+  if (!ensure_export_factors()) return CooMatrix();
   CooMatrix out;
   out.reserve(static_cast<std::size_t>(n_));
-  // P matrix such that A_perm = Pmat * A, where row i of A_perm is row P[i] of A.
-  // Thus Pmat has 1 at (i, P[i]).
-  if (!prepared_) return CooMatrix();
-
-  if (use_global_klu_) {
-    if (!global_ || !global_->sym) return CooMatrix();
-    const int32_t* P = (factors_extracted_ && P_perm_.size() == static_cast<std::size_t>(n_)) ? P_perm_.data() : global_->sym->P;
-    for (int32_t i = 0; i < n_; ++i) {
-      out.emplace_back(i, P[i], 1.0);
-    }
-    return out;
-  }
-
-  if (!decomposition_) return CooMatrix();
   for (int32_t i = 0; i < n_; ++i) {
-    out.emplace_back(i, decomposition_->P[i], 1.0);
+    out.emplace_back(i, P_perm_[static_cast<std::size_t>(i)], 1.0);
   }
   return out;
 }
 
 blockdaglu::CooMatrix Solver::getL() {
-  if (!prepared_ || !factored_) return CooMatrix();
-
-  if (use_global_klu_) {
-    if (!factors_extracted_) {
-      if (!global_) return CooMatrix();
-      if (!extract_global_factors(*global_, n_, L_, U_, Rs_, P_perm_, Q_perm_)) return CooMatrix();
-      factors_extracted_ = true;
-    }
-    return L_;
-  }
-
-  if (!export_lu_enabled()) return CooMatrix();
-  if (!factors_ || !decomposition_) return CooMatrix();
-  if (!factors_extracted_) {
-    if (!extract_blockdiag_lu_for_visualization(*decomposition_, *factors_, n_, L_, U_)) return CooMatrix();
-    factors_extracted_ = true;
-  }
+  clear_error();
+  if (!ensure_export_factors()) return CooMatrix();
   return L_;
 }
 
 blockdaglu::CooMatrix Solver::getU() {
-  if (!prepared_ || !factored_) return CooMatrix();
-
-  if (use_global_klu_) {
-    if (!factors_extracted_) {
-      if (!global_) return CooMatrix();
-      if (!extract_global_factors(*global_, n_, L_, U_, Rs_, P_perm_, Q_perm_)) return CooMatrix();
-      factors_extracted_ = true;
-    }
-    return U_;
-  }
-
-  if (!export_lu_enabled()) return CooMatrix();
-  if (!factors_ || !decomposition_) return CooMatrix();
-  if (!factors_extracted_) {
-    if (!extract_blockdiag_lu_for_visualization(*decomposition_, *factors_, n_, L_, U_)) return CooMatrix();
-    factors_extracted_ = true;
-  }
+  clear_error();
+  if (!ensure_export_factors()) return CooMatrix();
   return U_;
 }
 
 } // namespace blockdaglu
-
-

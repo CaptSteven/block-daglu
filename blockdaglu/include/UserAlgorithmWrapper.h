@@ -34,6 +34,8 @@ class UserAlgorithmWrapper final : public ALInterface {
   COOMatrix getL() override;
   COOMatrix getU() override;
 
+  const char* selectedMode() const;
+
  private:
   std::unique_ptr<blockdaglu::Solver> solver_;
 };

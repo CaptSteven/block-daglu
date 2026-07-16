@@ -2,7 +2,9 @@ cmake_minimum_required(VERSION 3.20)
 
 # NOTE: This repository started from a competition implementation. We keep the
 # original target names for now, but the external-facing project name is BlockDAGLU.
-project(BlockDAGLU LANGUAGES CXX)
+project(BlockDAGLU LANGUAGES C CXX)
+
+include(CTest)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -10,17 +12,64 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 option(BLOCKDAGLU_BUILD_COMPAT_SPARSEMATRIXLUTEST "Build competition-compatible adapter + benchmark tools" OFF)
 option(BLOCKDAGLU_BUILD_SMOKETEST "Build local smoketest executable (requires tool bundle)" OFF)
+option(BLOCKDAGLU_USE_LINKED_SUITESPARSE "Link SuiteSparse through CMake instead of loading DLLs by name" ON)
 
-# SuiteSparse headers (needed by the core library).
-# Prefer a clean dependency, independent from the competition tool bundle.
+# SuiteSparse dependency. Public builds use a linked package (vcpkg/config package).
+# The legacy header + runtime DLL mode remains available for the original evaluator bundle.
 set(SUITESPARSE_INCLUDE_DIR "" CACHE PATH "Path to SuiteSparse headers root (contains suitesparse/klu.h)")
-if(NOT SUITESPARSE_INCLUDE_DIR)
-  if(EXISTS "${CMAKE_SOURCE_DIR}/../third_party/SuiteSparse/include/suitesparse/klu.h")
-    set(SUITESPARSE_INCLUDE_DIR "${CMAKE_SOURCE_DIR}/../third_party/SuiteSparse/include")
+set(SUITESPARSE_LIBRARY_DIR "" CACHE PATH "Optional directory containing SuiteSparse libraries")
+set(BLOCKDAGLU_SUITESPARSE_TARGETS "")
+
+if(BLOCKDAGLU_USE_LINKED_SUITESPARSE)
+  find_package(SuiteSparse CONFIG QUIET)
+  if(NOT TARGET SuiteSparse::KLU AND NOT TARGET SuiteSparse::klu)
+    # SuiteSparse 7 installs per-component config packages, while older vcpkg
+    # ports expose one aggregate SuiteSparse package.
+    find_package(SuiteSparse_config CONFIG QUIET)
+    find_package(BTF CONFIG QUIET)
+    find_package(AMD CONFIG QUIET)
+    find_package(COLAMD CONFIG QUIET)
+    find_package(KLU CONFIG QUIET)
   endif()
-endif()
-if(NOT EXISTS "${SUITESPARSE_INCLUDE_DIR}/suitesparse/klu.h")
-  message(FATAL_ERROR "SUITESPARSE_INCLUDE_DIR is not set or invalid. It must contain suitesparse/klu.h. Suggested: ../third_party/SuiteSparse/include")
+  foreach(component KLU BTF AMD COLAMD SuiteSparseConfig)
+    string(TOLOWER "${component}" component_lower)
+    if(TARGET "SuiteSparse::${component}")
+      list(APPEND BLOCKDAGLU_SUITESPARSE_TARGETS "SuiteSparse::${component}")
+    elseif(TARGET "SuiteSparse::${component_lower}")
+      list(APPEND BLOCKDAGLU_SUITESPARSE_TARGETS "SuiteSparse::${component_lower}")
+    elseif(TARGET "${component}::${component}")
+      list(APPEND BLOCKDAGLU_SUITESPARSE_TARGETS "${component}::${component}")
+    endif()
+  endforeach()
+
+  if(NOT BLOCKDAGLU_SUITESPARSE_TARGETS)
+    if(NOT SUITESPARSE_INCLUDE_DIR OR NOT SUITESPARSE_LIBRARY_DIR)
+      message(FATAL_ERROR
+        "Linked SuiteSparse was requested, but no SuiteSparse CMake package was found. "
+        "Install the vcpkg suitesparse package or set SUITESPARSE_INCLUDE_DIR and SUITESPARSE_LIBRARY_DIR.")
+    endif()
+    find_library(BLOCKDAGLU_KLU_LIBRARY NAMES klu PATHS "${SUITESPARSE_LIBRARY_DIR}" REQUIRED NO_DEFAULT_PATH)
+    find_library(BLOCKDAGLU_BTF_LIBRARY NAMES btf PATHS "${SUITESPARSE_LIBRARY_DIR}" REQUIRED NO_DEFAULT_PATH)
+    find_library(BLOCKDAGLU_AMD_LIBRARY NAMES amd PATHS "${SUITESPARSE_LIBRARY_DIR}" REQUIRED NO_DEFAULT_PATH)
+    find_library(BLOCKDAGLU_COLAMD_LIBRARY NAMES colamd PATHS "${SUITESPARSE_LIBRARY_DIR}" REQUIRED NO_DEFAULT_PATH)
+    find_library(BLOCKDAGLU_CONFIG_LIBRARY NAMES suitesparseconfig SuiteSparseConfig PATHS "${SUITESPARSE_LIBRARY_DIR}" REQUIRED NO_DEFAULT_PATH)
+    set(BLOCKDAGLU_SUITESPARSE_TARGETS
+      ${BLOCKDAGLU_KLU_LIBRARY}
+      ${BLOCKDAGLU_BTF_LIBRARY}
+      ${BLOCKDAGLU_AMD_LIBRARY}
+      ${BLOCKDAGLU_COLAMD_LIBRARY}
+      ${BLOCKDAGLU_CONFIG_LIBRARY}
+    )
+  endif()
+else()
+  if(NOT SUITESPARSE_INCLUDE_DIR)
+    if(EXISTS "${CMAKE_SOURCE_DIR}/../third_party/SuiteSparse/include/suitesparse/klu.h")
+      set(SUITESPARSE_INCLUDE_DIR "${CMAKE_SOURCE_DIR}/../third_party/SuiteSparse/include")
+    endif()
+  endif()
+  if(NOT EXISTS "${SUITESPARSE_INCLUDE_DIR}/suitesparse/klu.h")
+    message(FATAL_ERROR "SUITESPARSE_INCLUDE_DIR is not set or invalid. It must contain suitesparse/klu.h.")
+  endif()
 endif()
 
 # Tool bundle (headers + import libs) used by the benchmark/dataset loader.
@@ -66,12 +115,20 @@ add_library(blockdaglu_core STATIC
 
 target_include_directories(blockdaglu_core PUBLIC
   ${CMAKE_CURRENT_LIST_DIR}/include
-  ${SUITESPARSE_INCLUDE_DIR}
 )
+
+if(SUITESPARSE_INCLUDE_DIR)
+  target_include_directories(blockdaglu_core PRIVATE ${SUITESPARSE_INCLUDE_DIR})
+endif()
 
 target_compile_definitions(blockdaglu_core PRIVATE
   BLOCKDAGLU_CORE=1
 )
+
+if(BLOCKDAGLU_USE_LINKED_SUITESPARSE)
+  target_compile_definitions(blockdaglu_core PRIVATE BLOCKDAGLU_USE_LINKED_SUITESPARSE=1)
+  target_link_libraries(blockdaglu_core PUBLIC ${BLOCKDAGLU_SUITESPARSE_TARGETS})
+endif()
 
 # Minimal, tool-independent example.
 add_executable(blockdaglu_minimal
@@ -85,6 +142,14 @@ target_include_directories(blockdaglu_minimal PRIVATE
 target_link_libraries(blockdaglu_minimal PRIVATE
   blockdaglu_core
 )
+
+if(BUILD_TESTING)
+  add_executable(blockdaglu_tests
+    apps/tests/main.cpp
+  )
+  target_link_libraries(blockdaglu_tests PRIVATE blockdaglu_core)
+  add_test(NAME blockdaglu_tests COMMAND blockdaglu_tests)
+endif()
 
 if(BLOCKDAGLU_BUILD_COMPAT_SPARSEMATRIXLUTEST)
   if(NOT EXISTS "${SPARSEMATRIXLUTEST_TOOL_ROOT}/tool/include/ALInterface.h")

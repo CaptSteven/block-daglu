@@ -23,29 +23,31 @@ struct CsrMatrixI32 {
 inline CscMatrixI32 coo_to_csc_i32(const std::vector<std::tuple<int,int,double>>& coo, int32_t n) {
   CscMatrixI32 out;
   out.n = n;
-  out.nnz = static_cast<int32_t>(coo.size());
   out.col_ptr.assign(n + 1, 0);
-  out.row_ind.resize(out.nnz);
-  out.values.resize(out.nnz);
 
   for (const auto& t : coo) {
+    const int r = std::get<0>(t);
     const int c = std::get<1>(t);
-    if (c >= 0 && c < n) {
+    if (r >= 0 && r < n && c >= 0 && c < n) {
       out.col_ptr[c + 1]++;
     }
   }
   for (int i = 0; i < n; ++i) {
     out.col_ptr[i + 1] += out.col_ptr[i];
   }
+  out.nnz = out.col_ptr[n];
+  out.row_ind.resize(static_cast<std::size_t>(out.nnz));
+  out.values.resize(static_cast<std::size_t>(out.nnz));
   thread_local std::vector<int32_t> tls_next;
   tls_next.assign(out.col_ptr.begin(), out.col_ptr.end());
   for (const auto& t : coo) {
     const int r = std::get<0>(t);
     const int c = std::get<1>(t);
     const double v = std::get<2>(t);
+    if (r < 0 || r >= n || c < 0 || c >= n) continue;
     const int32_t pos = tls_next[c]++;
-    out.row_ind[pos] = static_cast<int32_t>(r);
-    out.values[pos] = v;
+    out.row_ind[static_cast<std::size_t>(pos)] = static_cast<int32_t>(r);
+    out.values[static_cast<std::size_t>(pos)] = v;
   }
   return out;
 }
@@ -53,29 +55,31 @@ inline CscMatrixI32 coo_to_csc_i32(const std::vector<std::tuple<int,int,double>>
 inline CsrMatrixI32 coo_to_csr_i32(const std::vector<std::tuple<int,int,double>>& coo, int32_t n) {
   CsrMatrixI32 out;
   out.n = n;
-  out.nnz = static_cast<int32_t>(coo.size());
   out.row_ptr.assign(n + 1, 0);
-  out.col_ind.resize(out.nnz);
-  out.values.resize(out.nnz);
 
   for (const auto& t : coo) {
     const int r = std::get<0>(t);
-    if (r >= 0 && r < n) {
+    const int c = std::get<1>(t);
+    if (r >= 0 && r < n && c >= 0 && c < n) {
       out.row_ptr[r + 1]++;
     }
   }
   for (int i = 0; i < n; ++i) {
     out.row_ptr[i + 1] += out.row_ptr[i];
   }
+  out.nnz = out.row_ptr[n];
+  out.col_ind.resize(static_cast<std::size_t>(out.nnz));
+  out.values.resize(static_cast<std::size_t>(out.nnz));
   thread_local std::vector<int32_t> tls_next;
   tls_next.assign(out.row_ptr.begin(), out.row_ptr.end());
   for (const auto& t : coo) {
     const int r = std::get<0>(t);
     const int c = std::get<1>(t);
     const double v = std::get<2>(t);
+    if (r < 0 || r >= n || c < 0 || c >= n) continue;
     const int32_t pos = tls_next[r]++;
-    out.col_ind[pos] = static_cast<int32_t>(c);
-    out.values[pos] = v;
+    out.col_ind[static_cast<std::size_t>(pos)] = static_cast<int32_t>(c);
+    out.values[static_cast<std::size_t>(pos)] = v;
   }
   return out;
 }
@@ -86,8 +90,6 @@ inline CscMatrixI32 coo_to_csc_pattern_i32(const std::vector<std::tuple<int,int,
   CscMatrixI32 out;
   out.n = n;
   out.col_ptr.assign(n + 1, 0);
-  out.nnz = static_cast<int32_t>(coo.size());
-  out.row_ind.resize(static_cast<std::size_t>(out.nnz));
   out.values.clear();
 
   // Count columns (treat input as mostly-valid; bounds checks only on column to avoid O(nnz) extra branching).
@@ -99,13 +101,14 @@ inline CscMatrixI32 coo_to_csc_pattern_i32(const std::vector<std::tuple<int,int,
     out.col_ptr[i + 1] += out.col_ptr[i];
   }
   out.nnz = out.col_ptr[n];
+  out.row_ind.resize(static_cast<std::size_t>(out.nnz));
 
   thread_local std::vector<int32_t> tls_next;
   tls_next.assign(out.col_ptr.begin(), out.col_ptr.end());
   for (const auto& t : coo) {
     const int r = std::get<0>(t);
     const int c = std::get<1>(t);
-    if (c < 0 || c >= n) continue;
+    if (r < 0 || r >= n || c < 0 || c >= n) continue;
     const int32_t pos = tls_next[c]++;
     out.row_ind[static_cast<std::size_t>(pos)] = static_cast<int32_t>(r);
   }

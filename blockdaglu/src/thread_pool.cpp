@@ -1,6 +1,7 @@
 ﻿#include "thread_pool.h"
 
 #include <algorithm>
+#include <exception>
 #include <chrono>
 #include <cstdlib>
 #include <iostream>
@@ -560,20 +561,32 @@ void ThreadPool::parallel_for(std::size_t begin,
   }
 
   std::atomic<std::size_t> next{begin};
+  std::atomic<bool> failed{false};
+  std::mutex error_mtx;
+  std::exception_ptr first_error;
   const std::size_t workers = workers_.size();
   for (std::size_t t = 0; t < workers; ++t) {
     submit([&]() {
-      while (true) {
-        const std::size_t i0 = next.fetch_add(chunk, std::memory_order_relaxed);
-        if (i0 >= end) break;
-        const std::size_t i1 = std::min(end, i0 + chunk);
-        for (std::size_t i = i0; i < i1; ++i) {
-          fn(i);
+      try {
+        while (!failed.load(std::memory_order_acquire)) {
+          const std::size_t i0 = next.fetch_add(chunk, std::memory_order_relaxed);
+          if (i0 >= end) break;
+          const std::size_t i1 = std::min(end, i0 + chunk);
+          for (std::size_t i = i0; i < i1; ++i) {
+            fn(i);
+          }
+        }
+      } catch (...) {
+        failed.store(true, std::memory_order_release);
+        std::lock_guard<std::mutex> lock(error_mtx);
+        if (!first_error) {
+          first_error = std::current_exception();
         }
       }
     });
   }
   wait_idle();
+  if (first_error) std::rethrow_exception(first_error);
 }
 
 bool ThreadPool::try_pop_local(std::size_t index, std::function<void()>& out) {
@@ -622,4 +635,3 @@ void ThreadPool::worker_loop(std::size_t index) {
     });
   }
 }
-

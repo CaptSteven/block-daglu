@@ -217,7 +217,6 @@ int main(int argc, char** argv) {
     std::cerr << "GetProcAddress(CreateAlgorithm) failed for: " << dll_path.string() << "\n";
     return 7;
   }
-#endif
 
   // Note: ALInterface's destructor is not virtual (per provided header). We thus
   // keep the user algorithm instance alive for the whole process and let the OS
@@ -321,4 +320,5 @@ int main(int argc, char** argv) {
   }
 
   return 0;
+#endif
 }

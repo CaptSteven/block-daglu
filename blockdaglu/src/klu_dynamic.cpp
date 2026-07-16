@@ -6,6 +6,7 @@
   #include <windows.h>
 #endif
 
+#if !defined(BLOCKDAGLU_USE_LINKED_SUITESPARSE)
 static void* load_sym(void* dll, const char* name) {
 #ifdef _WIN32
   auto p = reinterpret_cast<void*>(GetProcAddress(reinterpret_cast<HMODULE>(dll), name));
@@ -19,6 +20,7 @@ static void* load_sym(void* dll, const char* name) {
   throw std::runtime_error("load_sym not supported on this platform");
 #endif
 }
+#endif
 
 KluDynamic& KluDynamic::instance() {
   // Intentionally "leak" the singleton to avoid shutdown-order issues.
@@ -42,7 +44,16 @@ KluDynamic::~KluDynamic() {
 }
 
 void KluDynamic::load() {
-#ifdef _WIN32
+#if defined(BLOCKDAGLU_USE_LINKED_SUITESPARSE)
+  defaults_ = &klu_defaults;
+  analyze_ = &klu_analyze;
+  analyze_given_ = &klu_analyze_given;
+  factor_ = &klu_factor;
+  solve_ = &klu_solve;
+  extract_ = &klu_extract;
+  free_symbolic_ = &klu_free_symbolic;
+  free_numeric_ = &klu_free_numeric;
+#elif defined(_WIN32)
   // Rely on PATH / current directory (typical evaluator setup places klu.dll next to the runner).
   dll_ = reinterpret_cast<void*>(LoadLibraryA("klu.dll"));
   if (!dll_) {

@@ -6,6 +6,7 @@
   #include <windows.h>
 #endif
 
+#if !defined(BLOCKDAGLU_USE_LINKED_SUITESPARSE)
 static void* load_sym(void* dll, const char* name) {
 #ifdef _WIN32
   auto p = reinterpret_cast<void*>(GetProcAddress(reinterpret_cast<HMODULE>(dll), name));
@@ -19,6 +20,7 @@ static void* load_sym(void* dll, const char* name) {
   throw std::runtime_error("load_sym not supported on this platform");
 #endif
 }
+#endif
 
 BtfDynamic& BtfDynamic::instance() {
   // Intentionally "leak" the singleton to avoid shutdown-order issues.
@@ -41,7 +43,9 @@ BtfDynamic::~BtfDynamic() {
 }
 
 void BtfDynamic::load() {
-#ifdef _WIN32
+#if defined(BLOCKDAGLU_USE_LINKED_SUITESPARSE)
+  order_ = &btf_order;
+#elif defined(_WIN32)
   dll_ = reinterpret_cast<void*>(LoadLibraryA("btf.dll"));
   if (!dll_) {
     throw std::runtime_error("Failed to load btf.dll. Ensure it is on PATH or next to the executable.");
