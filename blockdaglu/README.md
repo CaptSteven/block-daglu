@@ -10,10 +10,12 @@
 - `apps/`：可执行程序
   - `minimal/`：最小示例（不依赖竞赛工具链）
   - `benchmark/`：读取竞赛数据集做对比/输出 CSV（依赖竞赛工具链）
+  - `tests/`：输入验证、缓存、并发、数值求解和因子导出回归测试
+
+核心 API 保持 `set_matrix → analyze → factor → solve_in_place` 流程，并提供 `SolverError`、`last_error_message()`、显式维度重载及一致的 P/Q/A/L/U 兼容导出。
 
 ## 构建
 
 构建与运行说明见仓库根目录：
 
 - `../docs/BUILD.md`
-

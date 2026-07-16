@@ -223,14 +223,14 @@ Case 9 由 $3642.620\ \mathrm{ms}$ 降至 $981.908\ \mathrm{ms}$，
 
 \begin{figure}[H]
   \centering
-  \includegraphics[width=0.9\textwidth]{../contest/项目报告/image/system_flow.jpg}
+  \includegraphics[width=0.9\textwidth]{assets/gallery/system_flow.jpg}
   \caption{系统总体流程图}
   \label{fig:systemflow}
 \end{figure}
 
 \begin{figure}[H]
   \centering
-  \includegraphics[width=0.9\textwidth]{../contest/项目报告/image/algorithm_flow.jpg}
+  \includegraphics[width=0.9\textwidth]{assets/gallery/algorithm_flow.jpg}
   \caption{算法流程图}
   \label{fig:algorithmflow}
 \end{figure}
@@ -340,11 +340,11 @@ A,b \rightarrow \text{Profile} \rightarrow \text{Route Decision}
 性能结果区支持按策略和排序方式筛选 15 个测试用例。设计该模块的目的不是只展示一个加速比，而是帮助用户看到哪些 case 适合 BLOCK，哪些 case 更适合 KLU，以及收益与权重之间的关系。
 
 \paragraph{材料入口区设计}
-为了让展示页具备文档门户属性，材料入口区统一汇聚技术报告、路演讲稿、答辩问答、README、架构说明和核心源码入口。这使展示页面同时具备“展示”和“索引”两种能力。
+为了让展示页具备文档门户属性，材料入口区统一汇聚技术报告、构建说明、数据说明、README、架构说明和核心源码入口。这使展示页面同时具备“展示”和“索引”两种能力。
 
 \begin{figure}[H]
   \centering
-  \includegraphics[width=0.9\textwidth]{../contest/项目报告/image/klu_vs_block_pipeline.jpeg}
+  \includegraphics[width=0.9\textwidth]{assets/gallery/klu_vs_block_pipeline.jpeg}
   \caption{KLU 与 BLOCK 路线对比图}
   \label{fig:kluvsblock}
 \end{figure}
@@ -420,7 +420,7 @@ A_{11} & A_{12} & \cdots & A_{1k}\\
 
 \begin{figure}[H]
   \centering
-  \includegraphics[width=0.9\textwidth]{../contest/项目报告/image/block_inner_reorder_merge.jpeg}
+  \includegraphics[width=0.9\textwidth]{assets/gallery/block_inner_reorder_merge.jpeg}
   \caption{块内重排与合并示意图}
   \label{fig:blockinner}
 \end{figure}
@@ -441,7 +441,7 @@ T_{\mathrm{parallel}}\approx \max(L_{\mathrm{cp}},\frac{W}{p}) + T_{\mathrm{sche
 
 \begin{figure}[H]
   \centering
-  \includegraphics[width=0.9\textwidth]{../contest/项目报告/image/work_stealing_pool.jpeg}
+  \includegraphics[width=0.9\textwidth]{assets/gallery/work_stealing_pool.jpeg}
   \caption{Work-stealing 线程池调度示意}
   \label{fig:stealing}
 \end{figure}
@@ -497,7 +497,7 @@ T_{\mathrm{weighted}}.
 
 \begin{figure}[H]
   \centering
-  \includegraphics[width=0.9\textwidth]{../contest/项目报告/image/evidence_chain.jpeg}
+  \includegraphics[width=0.9\textwidth]{assets/gallery/evidence_chain.jpeg}
   \caption{结构—填充—耗时证据链}
   \label{fig:evidence}
 \end{figure}
@@ -772,7 +772,7 @@ powershell -NoProfile -ExecutionPolicy Bypass\\
 \texttt{blockdaglu/} & 核心求解器源码与头文件 \\
 \texttt{scripts/} & 构建、测试和基准运行脚本 \\
 \texttt{bench/out/} & 基准测试输出目录，保存 \texttt{runs.csv} 等文件 \\
-\texttt{contest/} & 比赛材料、技术报告和答辩文档 \\
+\texttt{docs/} & 架构、构建、配置、数据与公开技术报告 \\
 \texttt{showcase/} & 前端展示页面和作品文稿 \\
 \bottomrule
 \end{tabular}

@@ -194,7 +194,7 @@ Get-ChildItem Env:USERALGO_* -ErrorAction SilentlyContinue | Remove-Item -ErrorA
 
 $repo = Resolve-RepoRoot
 if (-not $OursRoot) { $OursRoot = Join-Path $repo "SparseMatrixLUTestFinal" }
-if (-not $TheirsRoot) { $TheirsRoot = Join-Path $repo "build\\systemteam_20260117_013342\\SparseMatrixLUTestFinal" }
+if (-not $TheirsRoot) { throw "Provide -TheirsRoot for the reference implementation." }
 $OursRoot = (Resolve-Path $OursRoot).Path
 $TheirsRoot = (Resolve-Path $TheirsRoot).Path
 
@@ -260,4 +260,3 @@ Write-Host ("Outputs: {0}" -f $OutDir)
   theirs_cases_csv = (Join-Path $OutDir "case_times_median_theirs.csv")
   join_csv = (Join-Path $OutDir "case_times_median_ours_vs_theirs.csv")
 }
-

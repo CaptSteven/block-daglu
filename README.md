@@ -1,108 +1,84 @@
 # BlockDAGLU
 
-BlockDAGLU 是一套面向稀疏线性方程组 `Ax=b` 的工程化求解框架：通过 **DM/BTF → UBTF → Block-DAG** 把稀疏结构显式化，并用 **work-stealing** 调度并行块内 LU；同时提供稳健回退与可插拔后端边界。
+BlockDAGLU 是面向稀疏线性方程组 `Ax=b` 的工程化求解框架。它通过 **DM/BTF → UBTF → Block-DAG** 显式化稀疏结构，并由 AUTO 在全局 KLU 与块级并行路线之间选择。
 
-## 本仓库提供什么
+## 主要能力
 
-- 稀疏求解框架：结构分解、块构建、Block-DAG 调度、稳健回退、可插拔后端接口
-- 可复现实验：基准脚本 + 图表生成脚本（复现口径写清楚）
-- 可公开数据集（竞赛矩阵）与复现命令（用于复现实验图/表）
+- 完整 COO 输入验证、重复项合并和可诊断错误状态
+- 全局 KLU 与 UBTF/BLOCK 求解路线
+- 有界、线程安全、配置隔离的 symbolic/decomposition 缓存
+- BLOCK 数值失败时的 AUTO 全局 KLU 回退
+- 与竞赛 `ALInterface` 兼容的 P/Q/A/L/U 懒加载导出
+- Windows/MSVC CI、数值测试和可审计基准产物
 
-## 核心思路（1 分钟读懂）
+## 快速构建
 
-- **DM/BTF → UBTF**：只看 pattern 的结构分解，把矩阵置换成“对角块 + 跨块上三角”的形式
-- **Block-DAG 调度**：把对角块视为任务（task），按依赖就绪执行；用 work-stealing 缓解负载不均与长尾
-- **AUTO 决策**：基于可观测画像特征选择路线（单体/分块）与线程甜点区（避免“线程越多越慢”）
-- **稳健性**：对病态/近奇异信号做检测与回退，保证满足精度门槛
-
-## 配置方式（环境变量）
-
-为了兼容历史脚本，本项目同时支持两套环境变量前缀：
-
-- 推荐：`BLOCKDAGLU_*`
-- 兼容：`USERALGO_*`
-
-当同时设置时，`BLOCKDAGLU_*` 优先生效。
-
-## 快速开始（占位）
-
-前置：Windows + Visual Studio 2022（或 Build Tools）+ CMake 3.20+。
+前置环境：Visual Studio 2022、CMake 3.20+、Git 和 vcpkg。
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\\scripts\\build.ps1 -Config Release
-powershell -NoProfile -ExecutionPolicy Bypass -File .\\scripts\\run_benchmark.ps1
+git clone --branch 2024.05.24 https://github.com/microsoft/vcpkg.git .\vcpkg
+.\vcpkg\bootstrap-vcpkg.bat -disableMetrics
+.\vcpkg\vcpkg.exe install suitesparse:x64-windows
+$env:VCPKG_ROOT = "$PWD\vcpkg"
+
+.\scripts\build.ps1 -Config Release
+ctest --test-dir .\build\blockdaglu -C Release --output-on-failure
 ```
 
-`run_benchmark.ps1` 会把结果写入 `bench/out/<timestamp>/`（并在控制台打印 `summary.txt`）。
+公开构建默认只生成核心库、最小示例和测试，不需要私有竞赛工具链。原竞赛 DLL 加载模式仍可通过 `-DBLOCKDAGLU_USE_LINKED_SUITESPARSE=OFF` 使用。
 
-如果你只想构建“库本体”（不需要竞赛工具链/基准工具），可以：
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\\scripts\\build.ps1 -Config Release -NoToolchain
-```
-
-如果你只想集成对外 C++ API（不需要竞赛工具链/基准工具），可以只构建核心库：
-
-```powershell
-cmake -S .\\blockdaglu -B .\\build\\blockdaglu -DCMAKE_BUILD_TYPE=Release `
-  -DBLOCKDAGLU_BUILD_COMPAT_SPARSEMATRIXLUTEST=OFF `
-  -DBLOCKDAGLU_BUILD_SMOKETEST=OFF
-cmake --build .\\build\\blockdaglu --config Release -j
-```
-
-更详细说明见：`docs/BUILD.md`。
-
-## 对外 API（通用接口）
-
-核心算法已从“竞赛接口（ALInterface）”中解耦，作为独立的 C++ 类对外提供：
-
-- 头文件：`blockdaglu/include/blockdaglu/solver.h`
-- 示例程序：`blockdaglu/apps/minimal/main.cpp`（构建目标：`blockdaglu_minimal`）
-
-最小用法示意：
+## C++ API
 
 ```cpp
 #include "blockdaglu/solver.h"
-blockdaglu::Solver s;
-blockdaglu::CooMatrix A = { {0,0,4.0}, {0,1,1.0}, {1,0,1.0}, {1,1,3.0}, {1,2,1.0}, {2,1,1.0}, {2,2,2.0} };
-std::vector<double> b = {1.0, 2.0, 3.0};
-s.set_matrix(std::move(A));
-s.analyze();
-s.factor();
-s.solve_in_place(b); // b 被覆盖为解 x
+
+blockdaglu::Solver solver;
+blockdaglu::CooMatrix matrix = {
+  {0, 0, 4.0}, {0, 1, 1.0},
+  {1, 0, 1.0}, {1, 1, 3.0}, {1, 2, 1.0},
+  {2, 1, 1.0}, {2, 2, 2.0},
+};
+std::vector<double> rhs{1.0, 2.0, 3.0};
+
+if (!solver.set_matrix(std::move(matrix), 3) ||
+    !solver.analyze() ||
+    !solver.factor() ||
+    !solver.solve_in_place(rhs)) {
+  throw std::runtime_error(solver.last_error_message());
+}
 ```
 
-竞赛接口适配仍保留在：
+旧的 `set_matrix(CooMatrix)` 保持兼容并从最大索引推断维度。新重载允许显式维度，从而表示尾部为空的行或列。矩阵扫描与规范化发生在 `analyze()`，保持竞赛 `prepareData()` 的计时规则。
 
-- `blockdaglu/include/UserAlgorithmWrapper.h`（仅用于兼容竞赛工具链）
+## Final15 数据与基准
 
-## 可复现与数据
+Final15 和竞赛工具链不进入公开仓库。维护者可通过私有 URL 或已有压缩包安装：
 
-- 基准脚本：`bench/`
-- 画图脚本：`scripts/`
-- 数据集目录：`data/FinalTestCases/`（1–15 用例，保留原始文件名与目录结构）
-- 数据发布：由于部分文件 >100MB，发布到 GitHub 需使用 Git LFS（见 `docs/DATASET.md`）
+```powershell
+.\scripts\install_final15.ps1 `
+  -ArchivePath C:\secure\FinalTestCases.zip `
+  -Sha256 <sha256>
 
-## 代码位置
+.\scripts\install_competition_toolchain.ps1 `
+  -ArchivePath C:\secure\SparseMatrixLUTestTool.zip `
+  -Sha256 <sha256>
 
-当前版本的核心实现代码已导入到：
+.\scripts\build.ps1 -CompetitionToolchain
+.\scripts\run_benchmark.ps1 -Warmup 1 -Repetitions 10
+```
 
-- `blockdaglu/`（原参赛实现目录的对外仓库化迁移；后续会继续把“竞赛接口/工具链”与“通用库接口”解耦）
+基准输出位于 `bench/out/<timestamp>/`，包含逐次运行、median/P95、精度 margin、环境元数据和汇总结果。任何求解失败或 `err_user > ε` 都会使命令返回非零状态。
 
-## 比赛资料（可选）
+展示页中的 `1.99x` 是修复前的历史单轮结果，不代表当前公开版本的正式复现结论。正式数字将在私有 Final15 工作流复跑后更新。
 
-为了方便外部读者理解项目来源，本仓库提供了一个**不参与构建**的比赛资料备份目录：
+## 文档
 
-- `contest/`（比赛工具/提交压缩包/技术报告/项目报告等，仅供参考，发布前请确认再分发许可）
+- 架构说明：`docs/ARCHITECTURE.md`
+- 构建说明：`docs/BUILD.md`
+- 配置说明：`docs/CONFIGURATION.md`
+- 数据与私有 CI：`docs/DATASET.md`
+- 作品技术报告：`docs/REPORT.md`
 
 ## 许可证
 
-MIT，见 `LICENSE`。
-
-## 第三方组件与许可
-
-见 `third_party/THIRD_PARTY_NOTICES.md`。
-
-## 发布清单（给维护者）
-
-见 `RELEASE_CHECKLIST.md`。
+自有代码采用 MIT 许可证。SuiteSparse 通过包管理器获取并遵循其各组件许可证。竞赛工具和 Final15 数据由使用者按其原始授权单独取得。

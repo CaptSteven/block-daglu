@@ -49,11 +49,11 @@
           </p>
           <div class="hero-actions">
             <a class="button button-primary" href="#results">查看结果</a>
-            <a class="button button-secondary" href="../contest/Rerank_技术报告.pdf">打开技术报告</a>
+            <a class="button button-secondary" href="../docs/REPORT.md">打开技术报告</a>
           </div>
           <ul class="hero-badges">
-            <li>Final15 全部过门槛</li>
-            <li>加权总耗时 1.99x 提升</li>
+            <li>历史 Final15 结果全部过门槛</li>
+            <li>历史加权总耗时 1.99x 提升</li>
             <li>结构分解 + 调度 + 回退全链路自研</li>
           </ul>
         </section>
@@ -86,16 +86,19 @@
     </header>
 
     <main class="page">
+      <p class="historical-note">
+        以下性能数字来自修复前的历史 Final15 单轮记录，保留用于说明项目阶段成果；当前公开版本将在私有数据工作流复跑后发布正式可复现结果。
+      </p>
       <section class="metrics reveal">
         <article class="metric-card">
           <p class="metric-label">Weighted Total</p>
           <h3>7937.462 → 3995.650 ms</h3>
-          <p>Final15 无预热单轮口径下，加权总耗时下降到原来的 50.3%。</p>
+          <p>历史 Final15 无预热单轮口径下，加权总耗时下降到原来的 50.3%。</p>
         </article>
         <article class="metric-card">
           <p class="metric-label">Overall Speedup</p>
           <h3>1.99x</h3>
-          <p>全部 15 个用例满足 <code>err_user ≤ ε</code> 的前提下获得的整体收益。</p>
+          <p>历史记录中全部 15 个用例满足 <code>err_user ≤ ε</code>。</p>
         </article>
         <article class="metric-card">
           <p class="metric-label">Case 7</p>

@@ -12,11 +12,11 @@
 - 核对 `third_party/THIRD_PARTY_NOTICES.md` 中列出的组件、版本/来源、许可文本是否齐全。
 - 若发布二进制（Release assets）：
   - 必须把 `third_party/licenses/` 中的许可文本与 notices 一并附带。
-  - 明确标注哪些 DLL 来自 SuiteSparse（以及其依赖的 AMD/COLAMD/SuiteSparse_config 等）。
+  - 公开仓库不提交预编译 SuiteSparse DLL；二进制发布物需附 vcpkg 安装的组件许可证。
 
 3) 数据集与比赛资料
-- `data/`、`contest/` 是否允许对外公开？（尤其是 `contest/` 里比赛主办方提供的材料）
-- 如不允许：从发行版中剔除（或改为“下载脚本 + 私有链接/仅指针”）。
+- 确认公开提交不包含 `data/FinalTestCases/`、`contest/` 或 `SparseMatrixLUTestTool`。
+- 私有数据和工具必须通过 URL/本地压缩包 + SHA-256 安装脚本部署。
 
 ## B. 版本与发布物（建议）
 
@@ -41,7 +41,7 @@ cmake --build .\build\blockdaglu_core --config Release -j
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build.ps1 -Config Release
 ```
 
-3) 最小示例运行（需要 SuiteSparse DLL 在 PATH）
+3) 最小示例运行（链接模式由 vcpkg 复制运行依赖）
 ```powershell
 $env:PATH=".\third_party\SuiteSparse\bin\x64\Release;$env:PATH"
 .\build\blockdaglu\Release\blockdaglu_minimal.exe
@@ -61,15 +61,14 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\run_benchmark.ps1 
 - README（外部读者 3 分钟能跑通）
   - 快速开始
   - “只构建核心库”的路径
-  - 依赖 DLL 说明（SuiteSparse 运行时依赖）
-  - Git LFS（数据/contest 大文件）
+  - vcpkg/SuiteSparse 固定依赖说明
+  - 私有数据与竞赛工具安装说明
 - `docs/ARCHITECTURE.md`（结构/模块图、核心术语）
 - `docs/BUILD.md`（构建与运行）
 - `docs/DATASET.md`（数据集发布）
 
-## E. CI（建议）
+## E. CI（必须）
 
-Windows CI 至少覆盖：
-- core-only build
-- tool build（至少编译 benchmark，不跑大数据）
-
+Windows CI 覆盖：
+- 公开 core-only build、CTest、最小示例和展示资源检查
+- 维护者手动触发的私有 Final15 重复基准与 artifact 上传

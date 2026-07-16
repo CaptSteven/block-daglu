@@ -94,7 +94,7 @@ function Run-One([string]$name, [string]$root, [int]$algChoice, [int]$caseId, [s
 
 $repo = Resolve-RepoRoot
 if (-not $OursRoot) { $OursRoot = Join-Path $repo "SparseMatrixLUTestFinal" }
-if (-not $TheirsRoot) { $TheirsRoot = Join-Path $repo "build\\systemteam_20260117_013342\\SparseMatrixLUTestFinal" }
+if (-not $TheirsRoot) { throw "Provide -TheirsRoot for the reference implementation." }
 $OursRoot = (Resolve-Path $OursRoot).Path
 $TheirsRoot = (Resolve-Path $TheirsRoot).Path
 

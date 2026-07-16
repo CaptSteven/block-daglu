@@ -8,6 +8,8 @@
 版本编号：V1.0  
 填写日期：2026年4月7日  
 
+> 复现状态说明：文档中的 Final15 性能数字来自修复前的历史单轮记录。当前公开版本已改为重复测量、median/P95、数据校验和与机器元数据口径；正式结果将在私有 Final15 工作流复跑后更新。
+
 ---
 
 ## 目录
@@ -156,11 +158,11 @@ $$
 - 单用例加速比：是否在权重大、规模大的样本上获得稳定收益
 - 扩展性与复现性：是否支持脚本化构建、批量复现与二次集成
 
-根据现有项目报告，Rerank 在 Final15 上全部满足精度门槛，加权总耗时由 `7937.462 ms` 降至 `3995.650 ms`，总体提升约 `1.99x`。
+根据修复前的历史记录，Rerank 在 Final15 上全部满足精度门槛，加权总耗时由 `7937.462 ms` 降至 `3995.650 ms`，总体提升约 `1.99x`。该数字等待当前版本按新口径复跑确认。
 
 图 1 给出了本作品的总体结构。
 
-![图1 Rerank 系统总体结构](./assets/rerank_overview.svg)
+![图1 Rerank 系统总体结构](../showcase/assets/rerank_overview.svg)
 
 ### 1.9 可行性与应用价值
 
@@ -190,7 +192,7 @@ $$
 
 图 2 展示了系统的 AUTO 选路机制。
 
-![图2 AUTO 选路机制示意](./assets/auto_strategy.svg)
+![图2 AUTO 选路机制示意](../showcase/assets/auto_strategy.svg)
 
 从功能角度看，系统整体流程如下：
 
@@ -307,7 +309,7 @@ $$
 
 - 作品主题：大规模稀疏线性方程组求解
 - 技术主线：结构分解、填充控制、并行调度
-- 结果摘要：Final15 全部过门槛，加权总耗时 1.99x 提升
+- 历史结果摘要：Final15 全部过门槛，加权总耗时 1.99x 提升（等待当前版本复跑）
 
 #### 3.1.2 技术路线区设计
 
@@ -340,11 +342,11 @@ $$
 
 图 3 至图 5 展示了系统流程与算法流程的核心素材。
 
-![图3 系统流程图](../contest/项目报告/image/system_flow.jpg)
+![图3 系统流程图](../showcase/assets/gallery/system_flow.jpg)
 
-![图4 算法流程图](../contest/项目报告/image/algorithm_flow.jpg)
+![图4 算法流程图](../showcase/assets/gallery/algorithm_flow.jpg)
 
-![图5 KLU 与 BLOCK 路线对比图](../contest/项目报告/image/klu_vs_block_pipeline.jpeg)
+![图5 KLU 与 BLOCK 路线对比图](../showcase/assets/gallery/klu_vs_block_pipeline.jpeg)
 
 ### 3.2 数据组织设计
 
@@ -441,7 +443,7 @@ $$
 
 图 6 展示了块内重排与合并相关的工程设计。
 
-![图6 块内重排与合并示意](../contest/项目报告/image/block_inner_reorder_merge.jpeg)
+![图6 块内重排与合并示意](../showcase/assets/gallery/block_inner_reorder_merge.jpeg)
 
 从实现逻辑上看，DM/BTF 主要包含三步：
 
@@ -466,7 +468,7 @@ $$
 
 图 7 展示了 work-stealing 线程池的执行示意。
 
-![图7 Work-stealing 调度示意](../contest/项目报告/image/work_stealing_pool.jpeg)
+![图7 Work-stealing 调度示意](../showcase/assets/gallery/work_stealing_pool.jpeg)
 
 进一步地，若块 $B_i$ 的估计代价记为 $c_i$，则整体关键路径长度近似由下式主导：
 
@@ -562,7 +564,7 @@ $$
 
 图 8 展示了这一证据链。
 
-![图8 结构—填充—耗时证据链](../contest/项目报告/image/evidence_chain.jpeg)
+![图8 结构—填充—耗时证据链](../showcase/assets/gallery/evidence_chain.jpeg)
 
 ### 3.5 技术创新总结
 
@@ -599,7 +601,7 @@ $$
 | 编译环境 | Visual Studio 2022 / MSVC |
 | 构建工具 | CMake 3.20+ |
 | 运行依赖 | KLU、BTF、AMD、COLAMD 等动态库 |
-| 数据集 | `data/FinalTestCases/1~15` |
+| 数据集 | 私有 Final15，通过校验安装脚本部署到 `data/FinalTestCases/1~15` |
 | 运行方式 | 脚本化构建与基准测试 |
 
 ### 4.3 功能测试
@@ -641,13 +643,13 @@ $$
 
 图 9 给出了本作品的关键性能快照。
 
-![图9 关键性能结果快照](./assets/performance_snapshot.svg)
+![图9 关键性能结果快照](../showcase/assets/performance_snapshot.svg)
 
 表 6 汇总了最具代表性的结果。
 
 | 表 6 关键测试结果 | 基线 | 本作品 | 结果 |
 | --- | --- | --- | --- |
-| Final15 加权总耗时 | 7937.462 ms | 3995.650 ms | 1.99x |
+| 历史 Final15 加权总耗时 | 7937.462 ms | 3995.650 ms | 1.99x（待复跑） |
 | Case 7 总耗时 | 4634.000 ms | 1830.190 ms | 2.532x |
 | Case 9 总耗时 | 3642.620 ms | 981.908 ms | 3.710x |
 | 精度门槛 | `err_user ≤ ε` | 全部满足 | 15/15 通过 |
@@ -705,7 +707,7 @@ $$
 
 | 表 8 技术指标 | 指标表现 |
 | --- | --- |
-| 运行速度 | Final15 总体约 1.99x 提升，Case 9 达到 3.710x |
+| 运行速度 | 历史 Final15 记录约 1.99x，Case 9 为 3.710x；当前版本待复跑 |
 | 安全性 | 本地离线运行，不涉及用户隐私与联网存储 |
 | 扩展性 | 核心求解框架与竞赛兼容层解耦，支持可插拔后端 |
 | 部署方便性 | 提供 CMake、PowerShell 脚本与最小示例 |
@@ -746,14 +748,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build.ps1 -Config 
 
 ### 5.3 运行依赖与目录说明
 
-本作品运行时依赖于若干动态库，其中最关键的包括：
-
-- `klu.dll`
-- `btf.dll`
-- `amd.dll`
-- `colamd.dll`
-- `suitesparseconfig.dll`
-- 竞赛工具链相关动态库
+公开构建默认通过 vcpkg 的 CMake package 链接 SuiteSparse。若 vcpkg 提供动态库，运行时目录应位于 `PATH`；旧竞赛评测包则可显式启用 DLL 兼容模式，并由受控工具包提供 KLU、BTF 及竞赛接口动态库。
 
 项目中的关键目录说明如下：
 
@@ -761,8 +756,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build.ps1 -Config 
 | --- | --- |
 | `blockdaglu/` | 核心求解代码 |
 | `docs/` | 构建说明、架构说明等文档 |
-| `contest/` | 比赛阶段报告、讲稿、压缩包和参考资料 |
-| `data/` | 测试用例数据 |
+| `data/` | 数据安装说明；Final15 由校验脚本安装且不进入公开仓库 |
 | `showcase/` | 展示页面与文稿输出目录 |
 
 ### 5.4 典型使用流程

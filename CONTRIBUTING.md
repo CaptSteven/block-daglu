@@ -5,9 +5,10 @@
 ## 1. 仓库结构约定
 
 - `blockdaglu/`：库本体与可执行工具（CMake 工程在此目录）
-- `data/`：公开测试用例数据（大文件，走 Git LFS）
-- `contest/`：比赛资料备份（可选，不参与构建；发布前请确认再分发许可）
-- `third_party/`：第三方依赖与许可文本
+- `data/`：数据安装说明；Final15 不进入公开仓库
+- `docs/`：架构、构建、配置、数据和技术报告
+- `showcase/`：静态展示页和公开展示素材
+- `third_party/`：本地依赖安装位置，默认被 Git 忽略
 
 ## 2. 开发环境
 
@@ -33,14 +34,12 @@
 - 优先保持可读性与可调试性（性能关键路径例外）
 - 避免引入新的“强绑定”依赖；对外 API 以 `blockdaglu::Solver` 为中心
 
-## 5. 大文件与 Git LFS
+## 5. 私有数据与大文件
 
-本仓库使用 Git LFS 跟踪：
-- `data/**`
-- `contest/**`
+不要提交以下内容：
 
-提交前请确认本机已启用：
-```powershell
-git lfs install
-```
+- `data/FinalTestCases/**`
+- `third_party/SparseMatrixLUTestTool/**`
+- 竞赛原始材料、访问令牌、私有下载地址和未知二进制文件
 
+需要复现完整基准时，请使用带 SHA-256 校验的安装脚本，并只提交脱敏后的结果文件。

@@ -1,0 +1,172 @@
+{
+  "status": "historical",
+  "verified": false,
+  "source": "pre-hardening Final15 single-run record",
+  "cases": [
+    {
+      "id": 1,
+      "n": 8226,
+      "nnz": 94723,
+      "weight": 0.1,
+      "strategy": "KLU",
+      "baseline": 28.176,
+      "ours": 16.538,
+      "speedup": 1.704,
+      "story": "小规模输入保持 KLU 稳健路径，避免为了并行而引入额外结构分析开销。"
+    },
+    {
+      "id": 2,
+      "n": 8392,
+      "nnz": 98146,
+      "weight": 0.1,
+      "strategy": "KLU",
+      "baseline": 27.573,
+      "ours": 18.277,
+      "speedup": 1.509,
+      "story": "同样属于小规模输入，AUTO 保守选择单体路径。"
+    },
+    {
+      "id": 3,
+      "n": 17033,
+      "nnz": 389381,
+      "weight": 0.1,
+      "strategy": "KLU",
+      "baseline": 159.192,
+      "ours": 97.516,
+      "speedup": 1.632,
+      "story": "收益主要来自全局重排与参数调节，而不是块级并行。"
+    },
+    {
+      "id": 4,
+      "n": 19698,
+      "nnz": 718507,
+      "weight": 0.1,
+      "strategy": "BLOCK",
+      "baseline": 385.355,
+      "ours": 122.43,
+      "speedup": 3.148,
+      "story": "结构收益开始明显，BLOCK 路线把矩阵拆成可并行的块后获得超过 3 倍提速。"
+    },
+    {
+      "id": 5,
+      "n": 37979,
+      "nnz": 1045703,
+      "weight": 0.15,
+      "strategy": "KLU",
+      "baseline": 928.495,
+      "ours": 621.608,
+      "speedup": 1.494,
+      "story": "规模更大，但分块收益还不足以覆盖构建成本，因此仍走 KLU。"
+    },
+    {
+      "id": 6,
+      "n": 43866,
+      "nnz": 630049,
+      "weight": 0.25,
+      "strategy": "KLU",
+      "baseline": 283.359,
+      "ours": 170.915,
+      "speedup": 1.658,
+      "story": "说明 AUTO 并不会简单用规模阈值硬切分，而是结合结构一起判断。"
+    },
+    {
+      "id": 7,
+      "n": 61531,
+      "nnz": 3047885,
+      "weight": 0.5,
+      "strategy": "BLOCK",
+      "baseline": 4634,
+      "ours": 1830.19,
+      "speedup": 2.532,
+      "story": "典型权重大用例。文档特别用它证明重排后 UBTF 结构清晰，decomp 阶段收益最明显。"
+    },
+    {
+      "id": 8,
+      "n": 9589,
+      "nnz": 191370,
+      "weight": 0.1,
+      "strategy": "KLU",
+      "baseline": 101.849,
+      "ours": 71.347,
+      "speedup": 1.428,
+      "story": "KLU 路线依然能稳定带来收益，说明项目不是只有 BLOCK 才有效。"
+    },
+    {
+      "id": 9,
+      "n": 57450,
+      "nnz": 3334561,
+      "weight": 0.5,
+      "strategy": "BLOCK",
+      "baseline": 3642.62,
+      "ours": 981.908,
+      "speedup": 3.71,
+      "story": "默认配置下的最佳单 case 加速，是 BLOCK 路线最有代表性的胜利样本。"
+    },
+    {
+      "id": 10,
+      "n": 33236,
+      "nnz": 1017920,
+      "weight": 0.15,
+      "strategy": "KLU",
+      "baseline": 807.67,
+      "ours": 617.403,
+      "speedup": 1.308,
+      "story": "说明某些中大型输入虽然不慢，但仍不适合分块，AUTO 选择更保守。"
+    },
+    {
+      "id": 11,
+      "n": 33468,
+      "nnz": 1624194,
+      "weight": 0.15,
+      "strategy": "KLU",
+      "baseline": 964.799,
+      "ours": 429.715,
+      "speedup": 2.245,
+      "story": "KLU 路线下也有超过 2 倍的例子，进一步说明优化并非只来自并行。"
+    },
+    {
+      "id": 12,
+      "n": 67869,
+      "nnz": 3486957,
+      "weight": 0.5,
+      "strategy": "KLU",
+      "baseline": 5575.37,
+      "ours": 4077.82,
+      "speedup": 1.367,
+      "story": "这是大规模但全局耦合更强的典型，分块后仍可能出现超大关键块，因此保留 KLU 路径更划算。"
+    },
+    {
+      "id": 13,
+      "n": 51278,
+      "nnz": 1166362,
+      "weight": 0.25,
+      "strategy": "BLOCK",
+      "baseline": 1587.32,
+      "ours": 709.366,
+      "speedup": 2.238,
+      "story": "又一个 BLOCK 成功样本，说明可利用块结构不是只存在于 case 7/9。"
+    },
+    {
+      "id": 14,
+      "n": 31537,
+      "nnz": 180612,
+      "weight": 0.15,
+      "strategy": "KLU",
+      "baseline": 243.627,
+      "ours": 172.205,
+      "speedup": 1.415,
+      "story": "结构分析成本与后续收益不成正比时，AUTO 会拒绝强行 BLOCK。"
+    },
+    {
+      "id": 15,
+      "n": 17978,
+      "nnz": 577035,
+      "weight": 0.1,
+      "strategy": "KLU",
+      "baseline": 318.941,
+      "ours": 218.699,
+      "speedup": 1.458,
+      "story": "以稳健方式收尾，体现 Rerank 的默认价值是整体优化而不是个别样本冒险提速。"
+    }
+  ]
+}

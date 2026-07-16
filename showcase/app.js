@@ -101,31 +101,31 @@ const deliveries = [
   },
   {
     kind: "md",
-    title: "正式版 Markdown",
+    title: "技术报告",
     body:
-      "适合继续改正文、补图补表和协作修稿，是整套作品文档最灵活的源文件。",
-    href: "./中国大学生计算机设计大赛_软件开发类作品文档_正式版.md",
-  },
-  {
-    kind: "docx",
-    title: "正式版 DOCX",
-    body:
-      "适合老师批注、格式微调和最终交稿前的常规 Word 流程。",
-    href: "./中国大学生计算机设计大赛_软件开发类作品文档_正式版.docx",
+      "公开版技术报告集中说明问题背景、算法设计、实验口径与历史结果边界。",
+    href: "../docs/REPORT.md",
   },
   {
     kind: "tex",
-    title: "正式版 LaTeX",
+    title: "排版源文件",
     body:
-      "适合精细排版、统一题注和稳定输出 PDF，是长稿排版版的核心源文件。",
+      "保留正式文档的 LaTeX 源文件，便于继续排版和生成提交版本。",
     href: "./中国大学生计算机设计大赛_软件开发类作品文档_正式版.tex",
   },
   {
-    kind: "pdf",
-    title: "正式版 PDF",
+    kind: "md",
+    title: "构建与验证",
     body:
-      "当前可直接用于提交和打印的长稿版本，已经与扩写后的内容同步。",
-    href: "./中国大学生计算机设计大赛_软件开发类作品文档_正式版.pdf",
+      "给出公开核心构建、CTest、旧评测兼容和私有基准的完整操作路径。",
+    href: "../docs/BUILD.md",
+  },
+  {
+    kind: "md",
+    title: "数据集说明",
+    body:
+      "说明合成测试与 Final15 私有数据的边界、安装校验方式和结果复现要求。",
+    href: "../docs/DATASET.md",
   },
   {
     kind: "code",
@@ -138,25 +138,25 @@ const deliveries = [
 
 const materials = [
   {
-    kind: "pdf",
-    title: "技术报告",
+    kind: "md",
+    title: "架构文档",
     body:
-      "完整说明问题背景、评价口径、DM/BTF、Block-DAG、AUTO 策略、实验结果与结论，是项目最完整的文字版本。",
-    href: "../contest/Rerank_技术报告.pdf",
+      "用对外可读的方式总结输入、画像、AUTO、KLU / BLOCK、factor 和 solve 的完整流程。",
+    href: "../docs/ARCHITECTURE.md",
   },
   {
     kind: "md",
-    title: "路演讲稿",
+    title: "配置参考",
     body:
-      "26 页答辩/路演版讲稿，把故事线、页面结构、每页讲什么都提前写好了，特别适合二次制作展示页或 PPT。",
-    href: "../contest/项目报告/路演PPT.md",
+      "列出公开环境变量、策略选项、线程上限和兼容别名，便于复现实验配置。",
+    href: "../docs/CONFIGURATION.md",
   },
   {
     kind: "md",
-    title: "答辩押题",
+    title: "发布检查清单",
     body:
-      "把“是不是只是换库”“为什么线程不是越多越好”“加速主要来自哪一段”等常见问题都准备了回答。",
-    href: "../contest/项目报告/押题.md",
+      "在发布前核对构建、测试、数据许可、敏感文件和展示结果是否满足公开要求。",
+    href: "../RELEASE_CHECKLIST.md",
   },
   {
     kind: "md",
@@ -167,10 +167,10 @@ const materials = [
   },
   {
     kind: "md",
-    title: "架构文档",
+    title: "第三方依赖",
     body:
-      "用对外可读的方式总结总体流程：输入 → 画像 → AUTO → KLU / BLOCK → factor / solve。",
-    href: "../docs/ARCHITECTURE.md",
+      "集中说明 SuiteSparse、竞赛接口和展示素材的来源、许可与公开边界。",
+    href: "../THIRD_PARTY.md",
   },
   {
     kind: "code",
@@ -204,207 +204,54 @@ const gallery = [
     title: "系统流程图",
     body:
       "项目报告配图中的总体系统流程，适合拿来解释从输入到输出的全链路结构。",
-    src: "../contest/项目报告/image/system_flow.jpg",
+    src: "./assets/gallery/system_flow.jpg",
   },
   {
     title: "算法流程图",
     body:
       "用于说明算法内部的处理次序和关键步骤，是页面中“技术路线”部分的天然补充。",
-    src: "../contest/项目报告/image/algorithm_flow.jpg",
+    src: "./assets/gallery/algorithm_flow.jpg",
   },
   {
     title: "KLU vs BLOCK 管线",
     body:
       "一张图把两条主路径放到同一坐标系里，便于解释 AUTO 不是二选一口号，而是体系化选路。",
-    src: "../contest/项目报告/image/klu_vs_block_pipeline.jpeg",
+    src: "./assets/gallery/klu_vs_block_pipeline.jpeg",
   },
   {
     title: "Work-stealing 调度",
     body:
       "对应“并行来自哪里”这一节，能直观看出线程窃取和长尾抑制的思路。",
-    src: "../contest/项目报告/image/work_stealing_pool.jpeg",
+    src: "./assets/gallery/work_stealing_pool.jpeg",
   },
   {
     title: "块内重排与合并",
     body:
       "对应块内核优化与小块合并的工程细节，说明项目不仅有高层路线，也打磨了实现颗粒度。",
-    src: "../contest/项目报告/image/block_inner_reorder_merge.jpeg",
+    src: "./assets/gallery/block_inner_reorder_merge.jpeg",
   },
   {
     title: "结构到性能的证据链",
     body:
       "把结构变化、fill-in 变化和性能变化联系起来，是 Rerank 整体叙事里非常关键的一张图。",
-    src: "../contest/项目报告/image/evidence_chain.jpeg",
+    src: "./assets/gallery/evidence_chain.jpeg",
   },
 ];
 
-const cases = [
-  {
-    id: 1,
-    n: 8226,
-    nnz: 94723,
-    weight: 0.1,
-    strategy: "KLU",
-    baseline: 28.176,
-    ours: 16.538,
-    speedup: 1.704,
-    story: "小规模输入保持 KLU 稳健路径，避免为了并行而引入额外结构分析开销。",
-  },
-  {
-    id: 2,
-    n: 8392,
-    nnz: 98146,
-    weight: 0.1,
-    strategy: "KLU",
-    baseline: 27.573,
-    ours: 18.277,
-    speedup: 1.509,
-    story: "同样属于小规模输入，AUTO 保守选择单体路径。",
-  },
-  {
-    id: 3,
-    n: 17033,
-    nnz: 389381,
-    weight: 0.1,
-    strategy: "KLU",
-    baseline: 159.192,
-    ours: 97.516,
-    speedup: 1.632,
-    story: "收益主要来自全局重排与参数调节，而不是块级并行。",
-  },
-  {
-    id: 4,
-    n: 19698,
-    nnz: 718507,
-    weight: 0.1,
-    strategy: "BLOCK",
-    baseline: 385.355,
-    ours: 122.43,
-    speedup: 3.148,
-    story: "结构收益开始明显，BLOCK 路线把矩阵拆成可并行的块后获得超过 3 倍提速。",
-  },
-  {
-    id: 5,
-    n: 37979,
-    nnz: 1045703,
-    weight: 0.15,
-    strategy: "KLU",
-    baseline: 928.495,
-    ours: 621.608,
-    speedup: 1.494,
-    story: "规模更大，但分块收益还不足以覆盖构建成本，因此仍走 KLU。",
-  },
-  {
-    id: 6,
-    n: 43866,
-    nnz: 630049,
-    weight: 0.25,
-    strategy: "KLU",
-    baseline: 283.359,
-    ours: 170.915,
-    speedup: 1.658,
-    story: "说明 AUTO 并不会简单用规模阈值硬切分，而是结合结构一起判断。",
-  },
-  {
-    id: 7,
-    n: 61531,
-    nnz: 3047885,
-    weight: 0.5,
-    strategy: "BLOCK",
-    baseline: 4634.0,
-    ours: 1830.19,
-    speedup: 2.532,
-    story: "典型权重大用例。文档特别用它证明重排后 UBTF 结构清晰，decomp 阶段收益最明显。",
-  },
-  {
-    id: 8,
-    n: 9589,
-    nnz: 191370,
-    weight: 0.1,
-    strategy: "KLU",
-    baseline: 101.849,
-    ours: 71.347,
-    speedup: 1.428,
-    story: "KLU 路线依然能稳定带来收益，说明项目不是只有 BLOCK 才有效。",
-  },
-  {
-    id: 9,
-    n: 57450,
-    nnz: 3334561,
-    weight: 0.5,
-    strategy: "BLOCK",
-    baseline: 3642.62,
-    ours: 981.908,
-    speedup: 3.71,
-    story: "默认配置下的最佳单 case 加速，是 BLOCK 路线最有代表性的胜利样本。",
-  },
-  {
-    id: 10,
-    n: 33236,
-    nnz: 1017920,
-    weight: 0.15,
-    strategy: "KLU",
-    baseline: 807.67,
-    ours: 617.403,
-    speedup: 1.308,
-    story: "说明某些中大型输入虽然不慢，但仍不适合分块，AUTO 选择更保守。",
-  },
-  {
-    id: 11,
-    n: 33468,
-    nnz: 1624194,
-    weight: 0.15,
-    strategy: "KLU",
-    baseline: 964.799,
-    ours: 429.715,
-    speedup: 2.245,
-    story: "KLU 路线下也有超过 2 倍的例子，进一步说明优化并非只来自并行。",
-  },
-  {
-    id: 12,
-    n: 67869,
-    nnz: 3486957,
-    weight: 0.5,
-    strategy: "KLU",
-    baseline: 5575.37,
-    ours: 4077.82,
-    speedup: 1.367,
-    story: "这是大规模但全局耦合更强的典型，分块后仍可能出现超大关键块，因此保留 KLU 路径更划算。",
-  },
-  {
-    id: 13,
-    n: 51278,
-    nnz: 1166362,
-    weight: 0.25,
-    strategy: "BLOCK",
-    baseline: 1587.32,
-    ours: 709.366,
-    speedup: 2.238,
-    story: "又一个 BLOCK 成功样本，说明可利用块结构不是只存在于 case 7/9。",
-  },
-  {
-    id: 14,
-    n: 31537,
-    nnz: 180612,
-    weight: 0.15,
-    strategy: "KLU",
-    baseline: 243.627,
-    ours: 172.205,
-    speedup: 1.415,
-    story: "结构分析成本与后续收益不成正比时，AUTO 会拒绝强行 BLOCK。",
-  },
-  {
-    id: 15,
-    n: 17978,
-    nnz: 577035,
-    weight: 0.1,
-    strategy: "KLU",
-    baseline: 318.941,
-    ours: 218.699,
-    speedup: 1.458,
-    story: "以稳健方式收尾，体现 Rerank 的默认价值是整体优化而不是个别样本冒险提速。",
-  },
-];
+let cases = [];
+
+async function loadBenchmarkResults() {
+  const response = await fetch("./data/results.json", { cache: "no-store" });
+  if (!response.ok) {
+    throw new Error(`Unable to load benchmark results: ${response.status}`);
+  }
+  const payload = await response.json();
+  if (!Array.isArray(payload.cases) || payload.cases.length === 0) {
+    throw new Error("Benchmark results do not contain any cases");
+  }
+  cases = payload.cases;
+  document.documentElement.dataset.resultsStatus = payload.verified ? "verified" : "historical";
+}
 
 const algorithmStages = [
   {
@@ -757,29 +604,40 @@ const stageImpactProfiles = [
   },
 ];
 
-const weightedBaselineTotal = cases.reduce((sum, item) => sum + item.weight * item.baseline, 0);
-const weightedOursTotal = cases.reduce((sum, item) => sum + item.weight * item.ours, 0);
-const weightedSavings = weightedBaselineTotal - weightedOursTotal;
-const blockCaseCount = cases.filter((item) => item.strategy === "BLOCK").length;
-const kluCaseCount = cases.length - blockCaseCount;
+let weightedBaselineTotal = 0;
+let weightedOursTotal = 0;
+let weightedSavings = 0;
+let blockCaseCount = 0;
+let kluCaseCount = 0;
 const affinityBaseline = 5198.264;
 const affinityPcores = 4266.575;
 const affinitySavings = affinityBaseline - affinityPcores;
-const positiveContributionTotal = cases.reduce(
-  (sum, item) => sum + Math.max(item.weight * (item.baseline - item.ours), 0),
-  0
-);
-const contributorCases = [...cases]
-  .map((item) => ({
-    ...item,
-    weightedGain: item.weight * (item.baseline - item.ours),
-  }))
-  .sort((a, b) => b.weightedGain - a.weightedGain);
+let positiveContributionTotal = 0;
+let contributorCases = [];
+let maxBar = 0;
+let maxWeightedGain = 0;
 
-const maxBaseline = Math.max(...cases.map((item) => item.baseline));
-const maxOurs = Math.max(...cases.map((item) => item.ours));
-const maxBar = Math.max(maxBaseline, maxOurs);
-const maxWeightedGain = Math.max(...contributorCases.map((item) => item.weightedGain));
+function computeBenchmarkSummaries() {
+  weightedBaselineTotal = cases.reduce((sum, item) => sum + item.weight * item.baseline, 0);
+  weightedOursTotal = cases.reduce((sum, item) => sum + item.weight * item.ours, 0);
+  weightedSavings = weightedBaselineTotal - weightedOursTotal;
+  blockCaseCount = cases.filter((item) => item.strategy === "BLOCK").length;
+  kluCaseCount = cases.length - blockCaseCount;
+  positiveContributionTotal = cases.reduce(
+    (sum, item) => sum + Math.max(item.weight * (item.baseline - item.ours), 0),
+    0
+  );
+  contributorCases = [...cases]
+    .map((item) => ({
+      ...item,
+      weightedGain: item.weight * (item.baseline - item.ours),
+    }))
+    .sort((a, b) => b.weightedGain - a.weightedGain);
+  const maxBaseline = Math.max(0, ...cases.map((item) => item.baseline));
+  const maxOurs = Math.max(0, ...cases.map((item) => item.ours));
+  maxBar = Math.max(maxBaseline, maxOurs);
+  maxWeightedGain = Math.max(0, ...contributorCases.map((item) => item.weightedGain));
+}
 
 const innovationGrid = document.getElementById("innovation-grid");
 const codeGrid = document.getElementById("code-grid");
@@ -1881,22 +1739,32 @@ function bindResizeRefresh() {
   });
 }
 
-renderScoreGrid();
-renderImpactList();
-renderTrendChart();
-renderGainChart();
-renderDemoStage();
-renderInnovationGrid();
-renderCodeGrid();
-renderChapterGrid();
-renderDeliveryGrid();
-renderMaterialsGrid();
-renderGalleryGrid();
-bindControls();
-bindDemoControls();
-renderCaseList();
-renderCaseDetail();
-initRevealObserver();
-initNavSpy();
-bindResizeRefresh();
-startDemoAutoplay();
+async function initializeShowcase() {
+  await loadBenchmarkResults();
+  computeBenchmarkSummaries();
+  renderScoreGrid();
+  renderImpactList();
+  renderTrendChart();
+  renderGainChart();
+  renderDemoStage();
+  renderInnovationGrid();
+  renderCodeGrid();
+  renderChapterGrid();
+  renderDeliveryGrid();
+  renderMaterialsGrid();
+  renderGalleryGrid();
+  bindControls();
+  bindDemoControls();
+  renderCaseList();
+  renderCaseDetail();
+  initRevealObserver();
+  initNavSpy();
+  bindResizeRefresh();
+  startDemoAutoplay();
+}
+
+initializeShowcase().catch((error) => {
+  console.error(error);
+  const note = document.querySelector(".historical-note");
+  if (note) note.textContent = "性能数据加载失败；请通过本地静态服务器打开展示页并检查 data/results.json。";
+});

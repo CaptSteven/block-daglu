@@ -14,15 +14,31 @@ __pycache__/
 results/
 artifacts/
 bench/out/
+.cache/
+.showcase-launch/
 *.png
 *.pdf
 
 # 数据集
-# 说明：本仓库计划直接发布竞赛测试用例数据；若后续体积过大或需要更优的分发方式，可改用 Git LFS 或下载脚本。
+# Final15 通过受校验的安装脚本获取，不进入公开仓库。
+data/FinalTestCases/
+data/downloads/
+
+# 私有竞赛材料与原始工具链
+contest/
+third_party/SparseMatrixLUTestTool/
+third_party/SuiteSparse/
 
 # OS
 .DS_Store
 Thumbs.db
-# no datasets / contest bundles for gitee (no LFS)
-data/FinalTestCases/
 
+# 文档构建中间文件
+*.aux
+*.log
+*.out
+*.toc
+
+# 本地保留的竞赛文稿副本（公开报告统一维护在 docs/REPORT.md）
+showcase/*正式版.md
+showcase/*草案.md
